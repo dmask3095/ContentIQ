@@ -8,18 +8,21 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// NOTE on portability: this schema targets SQLite locally and PostgreSQL in
-// production. Neither Prisma scalar lists (`String[]`) nor the `Json` column
-// type are supported by the SQLite connector, so:
+// NOTE: standardized on PostgreSQL for the shared cloud deployment (multiple
+// people hitting the same instance concurrently needs real MVCC, which
+// SQLite's single-writer model doesn't give you). The schema still avoids
+// Prisma scalar lists (`String[]`) and the `Json` column type, even though
+// Postgres supports both — kept as String columns holding JSON-encoded text
+// (JSON.parse/stringify at the application layer) so the existing,
+// already-tested route/service code didn't need to change.
 //   - "enum-like" fields (source, category, format, tone, status, ...) are
 //     plain String columns; allowed values are documented per field.
 //   - list/object fields (hashtags, researchItemIds, carouselSlides,
 //     dataSourcesEnabled, ...) are String columns holding JSON-encoded text.
-//     JSON.parse/stringify at the application layer (added in STEP 3).
 
 model ResearchItem {
   id             String   @id @default(cuid())

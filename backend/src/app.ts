@@ -16,7 +16,12 @@ import { settingsRouter } from './routes/settings';
 export function createApp(): Express {
   const app = express();
 
-  app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000' }));
+  // FRONTEND_URL supports a comma-separated list so the deployed frontend
+  // and a local dev server can both reach this backend at the same time.
+  const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
+    .split(',')
+    .map((origin) => origin.trim());
+  app.use(cors({ origin: allowedOrigins }));
   app.use(express.json());
   app.use(requestLogger);
 

@@ -6,8 +6,12 @@ services:
       - "5000:5000"
     env_file:
       - ./backend/.env
-    volumes:
-      - ./backend/prisma:/app/prisma
+    environment:
+      # Overrides .env's localhost-based URL — inside the Compose network,
+      # containers reach each other by service name, not localhost.
+      DATABASE_URL: postgresql://contentiq:contentiq@postgres:5432/contentiq
+    depends_on:
+      - postgres
     restart: unless-stopped
 
   frontend:

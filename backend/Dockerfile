@@ -31,4 +31,7 @@ RUN npx prisma generate
 COPY --from=build /app/dist ./dist
 
 EXPOSE 5000
-CMD ["node", "dist/server.js"]
+# migrate deploy only applies pending migrations and no-ops if already
+# current, so it's safe to run on every boot — needed since a fresh cloud
+# Postgres (e.g. Railway) starts with no tables at all.
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
