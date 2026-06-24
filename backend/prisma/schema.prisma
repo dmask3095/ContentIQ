@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+  // "native" covers local dev (Windows/macOS/glibc-Linux); the musl target
+  // is needed for the node:20-alpine Docker image, which ships OpenSSL 3.x —
+  // without it Prisma defaults to an openssl-1.1.x engine binary that fails
+  // to load at runtime with "Error loading shared library libssl.so.1.1".
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// NOTE on portability: this schema targets SQLite locally and PostgreSQL in
+// production. Neither Prisma scalar lists (`String[]`) nor the `Json` column
+// type are supported by the SQLite connector, so:
+//   - "enum-like" fields (source, category, format, tone, status, ...) are
+//     plain String columns; allowed values are documented per field.
+//   - list/object fields (hashtags, researchItemIds, carouselSlides,
+//     dataSourcesEnabled, ...) are String columns holding JSON-encoded text.
+//     JSON.parse/stringify at the application layer (added in STEP 3).
+
+model ResearchItem {
+  id             String   @id @default(cuid())
+  title          String
+  snippet        String
+  fullUrl        String   @map("full_url")
+  sourceUrl      String?  @map("source_url")
+  source         String // hn | reddit | google | techcrunch | blog | rss
+  category       String // AI News | AI Tools | Trends | Tips | Other
+  relevanceScore Float    @default(0) @map("relevance_score")
+  isRead         Boolean  @default(false) @map("is_read")
+  isArchived     Boolean  @default(false) @map("is_archived")
+  isStarred      Boolean  @default(false) @map("is_starred")
+  embedding      String? // JSON-encoded float array; reserved for future similarity search
+  publishedAt    DateTime @map("published_at")
+  discoveredAt   DateTime @default(now()) @map("discovered_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([source])
+  @@index([category])
+  @@index([discoveredAt])
+  @@map("research_items")
+}
+
+model ContentIdea {
+  id                 String   @id @default(cuid())
+  researchItemIds    String   @default("[]") @map("research_item_ids") // JSON-encoded array of ResearchItem.id
+  format             String // reel_hook | carousel | story | caption
+  conceptVariation   Int      @default(1) @map("concept_variation")
+  aiGeneratedCaption String   @map("ai_generated_caption")
+  aiHook             String   @map("ai_hook")
+  tone               String // Educational | Breaking | Opinion | Hype
+  generatedBy        String   @map("generated_by") // claude | gpt4 | both
+  userEdited         Boolean  @default(false) @map("user_edited")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  draft ContentDraft?
+
+  @@index([format])
+  @@map("content_ideas")
+}
+
+model ContentDraft {
+  id             String    @id @default(cuid())
+  ideaId         String?   @unique @map("idea_id")
+  idea           ContentIdea? @relation(fields: [ideaId], references: [id])
+  title          String
+  caption        String
+  format         String // reel | carousel | story | caption
+  carouselSlides String?   @map("carousel_slides") // JSON-encoded [{ title, copy, image_url }], when format = carousel
+  hashtags       String    @default("[]") // JSON-encoded array of strings
+  scheduledDate  DateTime  @map("scheduled_date")
+  scheduledTime  String    @map("scheduled_time") // "HH:MM"
+  status         String    @default("draft") // draft | scheduled | published
+  publishedAt    DateTime? @map("published_at")
+  userNotes      String?   @map("user_notes")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  publishedPost PublishedPost?
+
+  @@index([status])
+  @@index([format])
+  @@index([scheduledDate])
+  @@map("content_drafts")
+}
+
+model PublishedPost {
+  id              String   @id @default(cuid())
+  draftId         String   @unique @map("draft_id")
+  draft           ContentDraft @relation(fields: [draftId], references: [id])
+  instagramPostId String?  @map("instagram_post_id")
+  format          String
+  publishedAt     DateTime @default(now()) @map("published_at")
+  likes           Int      @default(0)
+  comments        Int      @default(0)
+  shares          Int      @default(0)
+  saves           Int      @default(0)
+  reach           Int      @default(0)
+  impressions     Int      @default(0)
+  lastSynced      DateTime @default(now()) @map("last_synced")
+
+  @@index([publishedAt])
+  @@map("published_posts")
+}
+
+model HashtagTrending {
+  id           String   @id @default(cuid())
+  hashtag      String   @unique
+  category     String // AI | Tech | Creator | General
+  searchVolume Int      @default(0) @map("search_volume")
+  growthRate   Float    @default(0) @map("growth_rate")
+  isFavorite   Boolean  @default(false) @map("is_favorite")
+  lastUpdated  DateTime @default(now()) @map("last_updated")
+
+  @@index([category])
+  @@index([isFavorite])
+  @@map("hashtags_trending")
+}
+
+// Single-row settings table; the app always reads/writes the first record.
+model UserSettings {
+  id                    String   @id @default(cuid())
+  researchSweepTime     String   @default("08:00") @map("research_sweep_time")
+  researchSweepEnabled  Boolean  @default(true) @map("research_sweep_enabled")
+  dataSourcesEnabled    String   @default("{\"google\":true,\"rss\":true,\"scrape\":true}") @map("data_sources_enabled") // JSON-encoded object
+  contentCategories     String   @default("[\"AI News\",\"AI Tools\",\"Trends\",\"Tips\"]") @map("content_categories") // JSON-encoded array
+  relevanceThreshold    Int      @default(5) @map("relevance_threshold")
+  emailDigestEnabled    Boolean  @default(true) @map("email_digest_enabled")
+  emailDigestFrequency  String   @default("daily") @map("email_digest_frequency") // daily | weekly
+  slackEnabled          Boolean  @default(false) @map("slack_enabled")
+  slackWebhookUrl       String?  @map("slack_webhook_url")
+  slackChannel          String?  @map("slack_channel")
+  timezone              String   @default("America/Los_Angeles")
+  bestPostingTimes      String   @default("{}") @map("best_posting_times") // JSON-encoded object
+  contentMixGoal        String   @default("{\"reels\":40,\"carousels\":40,\"stories\":20}") @map("content_mix_goal") // JSON-encoded object
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("user_settings")
+}

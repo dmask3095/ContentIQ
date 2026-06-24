@@ -1,0 +1,39 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/prisma:/app/prisma
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:5000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Optional: PostgreSQL for cloud-prep / production parity testing.
+  # Not wired up as the active DATABASE_URL by default (local dev uses SQLite).
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: contentiq
+      POSTGRES_PASSWORD: contentiq
+      POSTGRES_DB: contentiq
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
