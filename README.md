@@ -16,7 +16,9 @@ Full product details live in [ContentIQ_SPEC.md](ContentIQ_SPEC.md). Build steps
 
 - **Backend**: Express + TypeScript, Prisma + PostgreSQL, node-cron, Google Gemini SDK (Claude/OpenAI SDKs wired up but dormant — see `backend/src/utils/apiClients.ts`)
 - **Frontend**: React 18 + Vite, Tailwind CSS, Zustand
-- **Deployment**: Docker Compose locally; Railway (backend + Postgres) + Vercel (frontend) in the cloud — single shared instance, no per-user accounts (see Known limitations below)
+- **Deployment**: Docker Compose locally; [Render](https://render.com) (backend, free tier) + [Neon](https://neon.tech) (Postgres, free tier) + [Vercel](https://vercel.com) (frontend, free tier) in the cloud — single shared instance, no per-user accounts (see Known limitations below)
+
+**Live**: https://content-iq-frontend.vercel.app (backend: https://contentiq-zdhg.onrender.com)
 
 ## Project layout
 
@@ -83,15 +85,19 @@ docker-compose up --build
 
 ## Deploying (shared instance)
 
-This app is deployed as **one shared instance** — there's no login, so anyone with the URL sees and edits the same research feed, drafts, and settings. That's an intentional tradeoff for simplicity, not an oversight; see Known limitations.
+This app is deployed as **one shared instance**, entirely on free tiers — there's no login, so anyone with the URL sees and edits the same research feed, drafts, and settings. That's an intentional tradeoff for simplicity, not an oversight; see Known limitations.
 
-- **Backend + Postgres**: [Railway](https://railway.app) — new project, add a Postgres plugin, deploy `backend/` as a service, set the env vars from `backend/.env.example` (Railway provides `DATABASE_URL` automatically once Postgres is attached)
-- **Frontend**: [Vercel](https://vercel.com) — import `frontend/` as the project root, set `VITE_API_URL` to your Railway backend's public URL
-- After deploying, update `FRONTEND_URL` in the backend's env vars to your Vercel URL (needed for CORS)
+- **Database**: [Neon](https://neon.tech) free Postgres — sign in with GitHub, create a project, copy the connection string
+- **Backend**: [Render](https://render.com) free web service — sign in with GitHub, new Web Service from this repo, **Root Directory** = `backend`, **Runtime** = Docker (uses `backend/Dockerfile`, which runs migrations automatically on boot). Env vars: `DATABASE_URL` (from Neon), `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_SEARCH_ENGINE_ID`, `NODE_ENV=production`, and `FRONTEND_URL` (set after the frontend is deployed)
+- **Frontend**: [Vercel](https://vercel.com) free hobby plan — import this repo, **Root Directory** = `frontend`, env var `VITE_API_URL` = your Render backend's URL
+- After both are up, set `FRONTEND_URL` on Render to the Vercel URL (needed for CORS) and redeploy
+
+**Render's free tier spins down after 15 min idle** (cold start ~50s on next request), which means the 8am daily sweep and 6-hour hashtag job won't fire reliably unless something pings `/health` periodically. A free [UptimeRobot](https://uptimerobot.com) monitor (5 min interval) fixes this — currently not set up; the app works fine without it, scheduled jobs just aren't guaranteed to fire on time.
 
 ## Known limitations
 
 - **No authentication / multi-user accounts.** Everyone using the deployed link shares the same data and the same Gemini free-tier quota (20 requests/day on the current model). This was a deliberate choice for simplicity over building real auth — see `ContentIQ_SPEC.md` section 15.
+- **No keep-alive ping configured** — see the Render note above. Scheduled cron jobs may not fire if the instance is asleep; manual "Refresh Research" always works since it wakes the instance on request.
 - Claude/GPT-4 are wired up in code but dormant (no billing configured) — Gemini is the active AI provider.
 - No Instagram auto-posting, full analytics dashboard, or historical hashtag charts yet — explicitly "future phase" in the original spec.
 
