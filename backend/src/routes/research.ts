@@ -25,7 +25,15 @@ researchRouter.get('/', async (req, res) => {
   }
   const { category, source, is_read, is_archived, skip, limit } = parsed.data;
 
+  // Hides anything below the configured niche-relevance bar, including
+  // items that were already saved before the bar was raised — not just
+  // future sweeps. Research is meant to be tightly on-niche, not a feed
+  // of "everything that mentions AI."
+  const settings = await prisma.userSettings.findFirst();
+  const relevanceThreshold = settings?.relevanceThreshold ?? 0;
+
   const where = {
+    relevanceScore: { gte: relevanceThreshold },
     ...(category ? { category } : {}),
     ...(source ? { source } : {}),
     ...(is_read !== undefined ? { isRead: is_read === 'true' } : {}),

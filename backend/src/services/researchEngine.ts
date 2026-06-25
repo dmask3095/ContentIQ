@@ -132,66 +132,146 @@ export async function crawlMultipleSources(): Promise<RawResearchItem[]> {
   return [...google, ...rss, ...blogs];
 }
 
-const RELEVANCE_KEYWORDS = [
+// Plain substring matching was tried first and had to be abandoned: 'ai'
+// matched inside "container"/"maintain", 'app' matched inside "happen",
+// 'ml' matched inside "html". Every keyword below is matched on a real word
+// boundary instead (see toWordBoundaryRegexes), so plurals need an explicit
+// entry the same way 'tool'/'tools' both need to appear separately.
+
+// Confirms the item is about AI at all. On its own this is NOT enough to
+// score well — pure ML research/announcements match plenty of these with
+// zero practical takeaway, which is exactly what this app's niche excludes.
+const CORE_AI_KEYWORDS = [
   'ai',
   'artificial intelligence',
   'ml',
   'machine learning',
   'llm',
+  'llms',
   'gpt',
   'claude',
+  'gemini',
   'prompt',
+  'prompts',
   'openai',
   'anthropic',
+  'anthropics',
   'neural',
   'model',
+  'models',
   'chatbot',
+  'chatbots',
   'generative',
-  // Leverage/productivity/profit angle — this app isn't a breaking-news
-  // feed, it's about using AI to do more, faster, or for more money.
+  'agent',
+  'agents',
+];
+
+// The actual "use AI to do X" signal — leverage, productivity, profit.
+// Only counted when at least one CORE_AI_KEYWORDS hit is also present
+// (see scoreItem), so a non-AI "5 productivity tips" post can't sneak in.
+const NICHE_ACTION_KEYWORDS = [
   'automate',
   'automation',
   'productivity',
+  'productive',
   'workflow',
+  'workflows',
   'efficiency',
+  'efficient',
   'save time',
+  'saves time',
+  'time-saving',
   'monetize',
-  'income',
+  'passive income',
+  'extra income',
+  'profitable',
+  'earn money',
+  'earn extra',
   'side hustle',
   'freelance',
+  'freelancer',
+  'freelancers',
+  'client',
+  'clients',
   'business',
   'startup',
+  'startups',
+  'small business',
   'no-code',
-  'agent',
+  'tool',
+  'tools',
+  'app',
+  'apps',
+  'how to',
+  'guide',
+  'guides',
+  'tip',
+  'tips',
+  'trick',
+  'tricks',
+  'hack',
+  'hacks',
+  'tutorial',
+  'tutorials',
+  'grow your',
+  'scale your',
+  'work smarter',
+  // Deliberately excludes bare 'boost'/'grow'/'scale'/'faster'/'smarter' —
+  // those collide constantly with legitimate ML-research phrasing
+  // ("large-scale training", "faster inference", "boosts accuracy") that
+  // has zero practical takeaway for this niche. Same reason 'earn'/'earning'
+  // and bare 'income'/'profit' are excluded — they're substrings of or
+  // identical to standard financial-reporting language ("earnings report",
+  // "profit margin"), which scored a stock/earnings article a perfect 10
+  // during testing despite having nothing to do with the niche.
 ];
 
-const SOURCE_AUTHORITY: Record<ResearchSource, number> = {
-  hn: 1.0,
-  techcrunch: 1.0,
-  google: 0.9,
-  blog: 0.9,
-  rss: 0.85,
-  reddit: 0.8,
-};
-
-function keywordScore(text: string): number {
-  const lower = text.toLowerCase();
-  return Math.min(RELEVANCE_KEYWORDS.filter((k) => lower.includes(k)).length, 5);
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function recencyFactor(publishedAt: Date): number {
+function toWordBoundaryRegexes(keywords: string[]): RegExp[] {
+  return keywords.map((k) => new RegExp(`\\b${escapeRegex(k)}\\b`, 'i'));
+}
+
+const CORE_AI_REGEXES = toWordBoundaryRegexes(CORE_AI_KEYWORDS);
+const NICHE_ACTION_REGEXES = toWordBoundaryRegexes(NICHE_ACTION_KEYWORDS);
+
+function countHits(text: string, regexes: RegExp[]): number {
+  return regexes.filter((r) => r.test(text)).length;
+}
+
+// These are additive bonuses (0-1), not multipliers — keyword relevance is
+// the dominant signal (0-8 of the 10 points) so a great niche-fit post from
+// a lower-authority source still clears a high bar instead of being
+// multiplicatively crushed by source/recency like the old formula did.
+const SOURCE_AUTHORITY_BONUS: Record<ResearchSource, number> = {
+  hn: 1.0,
+  techcrunch: 1.0,
+  google: 0.8,
+  blog: 0.8,
+  rss: 0.6,
+  reddit: 0.6,
+};
+
+// Not a news feed — a great practical tip from last week is just as usable
+// as one from today, so recency is a minor bonus, not a hard gate.
+function recencyBonus(publishedAt: Date): number {
   const hoursAgo = (Date.now() - publishedAt.getTime()) / 3_600_000;
-  if (hoursAgo <= 24) return 1;
-  if (hoursAgo <= 72) return 0.8;
-  if (hoursAgo <= 168) return 0.6;
+  if (hoursAgo <= 24 * 3) return 1;
+  if (hoursAgo <= 24 * 14) return 0.7;
   return 0.4;
 }
 
 function scoreItem(item: RawResearchItem): number {
-  const kw = keywordScore(`${item.title} ${item.snippet}`);
-  const authority = SOURCE_AUTHORITY[item.source] ?? 0.7;
-  const recency = recencyFactor(item.publishedAt);
-  const raw = kw * 2 * authority * recency;
+  const text = `${item.title} ${item.snippet}`;
+  const aiHits = countHits(text, CORE_AI_REGEXES);
+  if (aiHits === 0) return 0; // not about AI at all — score it zero, full stop
+
+  const actionHits = countHits(text, NICHE_ACTION_REGEXES);
+  const kw = Math.min(actionHits * 2.5 + aiHits, 8);
+  const authorityBonus = SOURCE_AUTHORITY_BONUS[item.source] ?? 0.5;
+  const raw = kw + authorityBonus + recencyBonus(item.publishedAt);
   return Math.max(0, Math.min(10, Math.round(raw * 10) / 10));
 }
 

@@ -130,7 +130,7 @@ model UserSettings {
   researchSweepEnabled  Boolean  @default(true) @map("research_sweep_enabled")
   dataSourcesEnabled    String   @default("{\"google\":true,\"rss\":true,\"scrape\":true}") @map("data_sources_enabled") // JSON-encoded object
   contentCategories     String   @default("[\"AI News\",\"AI Tools\",\"Trends\",\"Tips\"]") @map("content_categories") // JSON-encoded array
-  relevanceThreshold    Int      @default(5) @map("relevance_threshold")
+  relevanceThreshold    Int      @default(7) @map("relevance_threshold")
   emailDigestEnabled    Boolean  @default(true) @map("email_digest_enabled")
   emailDigestFrequency  String   @default("daily") @map("email_digest_frequency") // daily | weekly
   slackEnabled          Boolean  @default(false) @map("slack_enabled")

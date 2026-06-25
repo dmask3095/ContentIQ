@@ -85,6 +85,65 @@ describe('deduplicateAndRank', () => {
     ]);
     expect(result.relevanceScore).toBe(0);
   });
+
+  it('returns 0 for action/productivity language with no AI keyword present (no false positives)', () => {
+    const [result] = deduplicateAndRank([
+      rawItem({ title: '5 productivity tips to grow your business', snippet: 'How to automate your workflow.' }),
+    ]);
+    expect(result.relevanceScore).toBe(0);
+  });
+
+  it('scores low for AI content with no practical leverage angle (pure announcement/research)', () => {
+    const [result] = deduplicateAndRank([
+      rawItem({
+        title: 'OpenAI unveils its first custom chip, built by Broadcom',
+        snippet: 'A new inference chip designed for large-scale model training.',
+        source: 'hn',
+        publishedAt: new Date(),
+      }),
+    ]);
+    expect(result.relevanceScore).toBeLessThan(7);
+  });
+
+  it('scores at or above the niche threshold when an AI keyword pairs with practical leverage language', () => {
+    const [result] = deduplicateAndRank([
+      rawItem({
+        title: '5 AI Tools to Automate Your Workflow and Save Time',
+        snippet: 'A roundup of automation tools for freelancers and small business owners.',
+        source: 'techcrunch',
+        publishedAt: new Date(),
+      }),
+    ]);
+    expect(result.relevanceScore).toBeGreaterThanOrEqual(7);
+  });
+
+  it('does not match keywords as substrings inside unrelated words (word-boundary matching)', () => {
+    // "container" contains "ai", "happen" contains "app" — plain .includes()
+    // matching used to score this as having AI/Tools keyword hits, which is
+    // wrong: neither word appears as its own standalone word here.
+    const [result] = deduplicateAndRank([
+      rawItem({
+        title: 'Container rebuild happens to break my deterministic setup',
+        snippet: 'Nothing about that topic is mentioned anywhere in this unrelated sentence at all.',
+      }),
+    ]);
+    expect(result.relevanceScore).toBe(0);
+  });
+
+  it('scores a real complaint thread about Claude reliability below the niche threshold', () => {
+    // Real example that scored 8.1 before word-boundary matching was added —
+    // "anthropics" and "happen" were false-positive substring matches.
+    const [result] = deduplicateAndRank([
+      rawItem({
+        title: 'Opus 4.8 The Worst Claude Ever',
+        snippet:
+          "I have worked with most all of Anthropics LLM's for development, but hands down Opus 4.8 has caused me more grief... today I had to do a container rebuild and it slipped back into Opus 4.8 from Sonnet without me realizing the switch happen",
+        source: 'reddit',
+        publishedAt: new Date(),
+      }),
+    ]);
+    expect(result.relevanceScore).toBeLessThan(7);
+  });
 });
 
 describe('categorizeItems', () => {
