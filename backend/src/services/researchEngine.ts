@@ -319,10 +319,11 @@ export async function saveToDatabase(
 
   const existing = await prisma.researchItem.findMany({
     where: { fullUrl: { in: items.map((i) => i.fullUrl) } },
-    select: { fullUrl: true },
+    select: { id: true, fullUrl: true },
   });
-  const existingUrls = new Set(existing.map((e) => e.fullUrl));
-  const newItems = items.filter((i) => !existingUrls.has(i.fullUrl));
+  const existingIdByUrl = new Map(existing.map((e) => [e.fullUrl, e.id]));
+  const newItems = items.filter((i) => !existingIdByUrl.has(i.fullUrl));
+  const refreshItems = items.filter((i) => existingIdByUrl.has(i.fullUrl));
 
   if (newItems.length > 0) {
     await prisma.researchItem.createMany({
@@ -338,6 +339,18 @@ export async function saveToDatabase(
       })),
     });
   }
+
+  // Re-score items that already exist instead of just skipping them — keeps
+  // stored scores/categories current when the scoring logic changes, rather
+  // than leaving a URL stuck forever with whatever it scored on first sweep.
+  await Promise.all(
+    refreshItems.map((i) =>
+      prisma.researchItem.update({
+        where: { id: existingIdByUrl.get(i.fullUrl)! },
+        data: { relevanceScore: i.relevanceScore, category: i.category },
+      })
+    )
+  );
 
   return { found: items.length, added: newItems.length };
 }
