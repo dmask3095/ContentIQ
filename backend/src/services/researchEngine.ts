@@ -24,12 +24,20 @@ export interface CategorizedResearchItem extends ScoredResearchItem {
 
 const rssParser = new Parser();
 
+// Broad on purpose — this casts wide across general tech/AI sources rather
+// than pre-filtering to the niche at the source level. The 7+ relevance
+// score (see scoreItem) is what narrows this down, not the source list.
 const RSS_FEEDS: { url: string; source: ResearchSource }[] = [
   { url: 'https://news.ycombinator.com/rss', source: 'hn' },
   { url: 'https://www.reddit.com/r/MachineLearning/.rss', source: 'reddit' },
   { url: 'https://www.reddit.com/r/artificial/.rss', source: 'reddit' },
+  { url: 'https://www.reddit.com/r/ChatGPT/.rss', source: 'reddit' },
   { url: 'https://techcrunch.com/feed/', source: 'techcrunch' },
   { url: 'https://venturebeat.com/category/ai/feed/', source: 'rss' },
+  { url: 'https://www.theverge.com/rss/index.xml', source: 'rss' },
+  { url: 'https://feeds.arstechnica.com/arstechnica/index', source: 'rss' },
+  { url: 'https://www.technologyreview.com/feed/', source: 'rss' },
+  { url: 'https://www.wired.com/feed/rss', source: 'rss' },
 ];
 
 // Web scraping is the documented fallback tier — selectors here are
@@ -65,9 +73,10 @@ async function googleSearch(): Promise<RawResearchItem[]> {
     logger.warn('Google Custom Search not configured, skipping');
     return [];
   }
-  // Not a news feed — queries target practical AI leverage (automation,
-  // productivity, income), matching the app's actual content angle.
-  const queries = ['AI productivity tools for business', 'how to automate tasks with AI', 'AI tools to make money online'];
+  // Broad on purpose, same reasoning as RSS_FEEDS above — search generally
+  // for AI news/tools rather than pre-filtering to the niche at query time.
+  // Relevance scoring (7+) is what narrows results down, not the query text.
+  const queries = ['AI news', 'AI tools', 'AI tech trends'];
   try {
     const responses = await Promise.all(
       queries.map((q) =>
