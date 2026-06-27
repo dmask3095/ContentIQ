@@ -52,7 +52,8 @@ model ContentIdea {
   researchItemIds    String   @default("[]") @map("research_item_ids") // JSON-encoded array of ResearchItem.id
   format             String // reel_hook | carousel | story | caption
   conceptVariation   Int      @default(1) @map("concept_variation")
-  aiGeneratedCaption String   @map("ai_generated_caption")
+  aiGeneratedCaption String   @map("ai_generated_caption") // the actual Instagram post caption (keywords + CTA), not the script
+  aiScript           String   @default("") @map("ai_script") // literal spoken voiceover script (reel_hook/story) or slide copy (carousel); empty for caption format
   aiHook             String   @map("ai_hook")
   tone               String // Educational | Breaking | Opinion | Hype
   generatedBy        String   @map("generated_by") // claude | gpt4 | both
@@ -71,6 +72,7 @@ model ContentDraft {
   idea           ContentIdea? @relation(fields: [ideaId], references: [id])
   title          String
   caption        String
+  script         String?   // literal spoken voiceover script the user reads aloud; null for caption-only drafts
   format         String // reel | carousel | story | caption
   carouselSlides String?   @map("carousel_slides") // JSON-encoded [{ title, copy, image_url }], when format = carousel
   hashtags       String    @default("[]") // JSON-encoded array of strings

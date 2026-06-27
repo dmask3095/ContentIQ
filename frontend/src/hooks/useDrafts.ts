@@ -40,8 +40,24 @@ export function useDrafts(filters: DraftFilters = {}) {
 }
 
 export type CreateDraftInput =
-  | { idea_id: string; scheduled_date: string; scheduled_time: string; caption?: string; hashtags?: string[]; title?: string }
-  | { format: string; caption: string; scheduled_date: string; scheduled_time: string; title?: string; hashtags?: string[] };
+  | {
+      idea_id: string;
+      scheduled_date: string;
+      scheduled_time: string;
+      caption?: string;
+      script?: string;
+      hashtags?: string[];
+      title?: string;
+    }
+  | {
+      format: string;
+      caption: string;
+      script?: string;
+      scheduled_date: string;
+      scheduled_time: string;
+      title?: string;
+      hashtags?: string[];
+    };
 
 export function useCreateDraft() {
   const addContentDraft = useAppStore((s) => s.addContentDraft);
@@ -64,7 +80,14 @@ export function useUpdateDraft() {
   const update = useCallback(
     async (
       id: string,
-      patch: Partial<{ caption: string; hashtags: string[]; scheduled_date: string; scheduled_time: string; status: string }>
+      patch: Partial<{
+        caption: string;
+        script: string;
+        hashtags: string[];
+        scheduled_date: string;
+        scheduled_time: string;
+        status: string;
+      }>
     ) => {
       const res = await api.put<{ draft: ContentDraft }>(`/api/drafts/${id}`, patch);
       updateContentDraft(id, res.data.draft);

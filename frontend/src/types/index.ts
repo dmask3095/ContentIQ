@@ -43,6 +43,7 @@ export interface ContentIdea {
   format: ContentFormat;
   conceptVariation: number;
   aiGeneratedCaption: string;
+  aiScript: string;
   aiHook: string;
   tone: ContentTone;
   generatedBy: GeneratedBy;
@@ -61,6 +62,7 @@ export interface ContentDraft {
   ideaId: string | null;
   title: string;
   caption: string;
+  script: string | null;
   format: DraftFormat;
   carouselSlides: CarouselSlide[] | null;
   hashtags: string[];

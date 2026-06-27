@@ -17,13 +17,20 @@ export function ConceptCard({ idea }: { idea: ContentIdea }) {
   const { create } = useCreateDraft();
 
   const [caption, setCaption] = useState(idea.aiGeneratedCaption);
+  const [script, setScript] = useState(idea.aiScript);
   const [isEditingCaption, setIsEditingCaption] = useState(false);
+  const [isEditingScript, setIsEditingScript] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [showSaveForm, setShowSaveForm] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [scheduledTime, setScheduledTime] = useState('09:00');
   const [saving, setSaving] = useState(false);
+
+  const handleCopyScript = async () => {
+    await navigator.clipboard.writeText(script);
+    showToast('Script copied', 'success');
+  };
 
   const handleSaveAsDraft = async () => {
     setSaving(true);
@@ -33,6 +40,7 @@ export function ConceptCard({ idea }: { idea: ContentIdea }) {
         scheduled_date: scheduledDate,
         scheduled_time: scheduledTime,
         caption,
+        script: script || undefined,
         hashtags: hashtags.length > 0 ? hashtags : undefined,
       });
       showToast('Saved as draft', 'success');
@@ -55,24 +63,53 @@ export function ConceptCard({ idea }: { idea: ContentIdea }) {
 
       <p className="text-lg font-bold leading-snug text-slate-900">{idea.aiHook}</p>
 
-      {isEditingCaption ? (
-        <textarea
-          value={caption}
-          onChange={(e) => setCaption(e.target.value)}
-          rows={6}
-          className="w-full rounded border border-slate-300 p-2 text-sm"
-        />
-      ) : (
-        <p className="text-sm text-slate-600">{expanded ? caption : truncate(caption, 180)}</p>
+      {script && (
+        <div className="rounded border border-slate-200 bg-slate-50 p-3">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            🎤 Script — read this out loud while filming
+          </p>
+          {isEditingScript ? (
+            <textarea
+              value={script}
+              onChange={(e) => setScript(e.target.value)}
+              rows={5}
+              className="w-full rounded border border-slate-300 p-2 text-sm"
+            />
+          ) : (
+            <p className="whitespace-pre-wrap text-sm text-slate-800">{script}</p>
+          )}
+          <div className="mt-2 flex gap-3 text-xs font-medium text-blue-600">
+            <button onClick={handleCopyScript}>Copy script</button>
+            <button onClick={() => setIsEditingScript((v) => !v)}>
+              {isEditingScript ? 'Done editing' : 'Edit script'}
+            </button>
+          </div>
+        </div>
       )}
 
-      <div className="flex gap-3 text-xs font-medium text-blue-600">
-        {!isEditingCaption && (
-          <button onClick={() => setExpanded((v) => !v)}>{expanded ? 'Show less' : 'Show full caption'}</button>
+      <div>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          📝 Instagram caption — post this
+        </p>
+        {isEditingCaption ? (
+          <textarea
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            rows={6}
+            className="w-full rounded border border-slate-300 p-2 text-sm"
+          />
+        ) : (
+          <p className="text-sm text-slate-600">{expanded ? caption : truncate(caption, 180)}</p>
         )}
-        <button onClick={() => setIsEditingCaption((v) => !v)}>
-          {isEditingCaption ? 'Done editing' : 'Edit Caption'}
-        </button>
+
+        <div className="mt-2 flex gap-3 text-xs font-medium text-blue-600">
+          {!isEditingCaption && (
+            <button onClick={() => setExpanded((v) => !v)}>{expanded ? 'Show less' : 'Show full caption'}</button>
+          )}
+          <button onClick={() => setIsEditingCaption((v) => !v)}>
+            {isEditingCaption ? 'Done editing' : 'Edit Caption'}
+          </button>
+        </div>
       </div>
 
       <div>

@@ -10,6 +10,7 @@ export type IdeaGeneratedBy = 'gemini';
 export interface GeneratedIdea {
   format: IdeaFormat;
   hook: string;
+  script: string;
   caption: string;
   tone: IdeaTone;
 }
@@ -19,12 +20,19 @@ interface ResearchSummary {
   snippet: string;
 }
 
+// "script" and "caption" are deliberately separate fields with different
+// jobs: script is the literal word-for-word thing the user speaks/shows on
+// screen while filming; caption is the text that goes in the Instagram post
+// description box once it's published. Conflating them (the old version put
+// the script in the "caption" field) meant there was no real Instagram
+// caption at all -- just the script with nowhere for reach-driving copy to
+// live.
 function buildPrompt(items: ResearchSummary[], opts: { altAngles?: boolean } = {}): string {
   const topic = items.map((i) => `- ${i.title}: ${i.snippet}`).join('\n');
   const angleNote = opts.altAngles
     ? '\nFocus on alternative angles and viral, scroll-stopping hooks rather than a standard educational take.'
     : '';
-  return `Topic:\n${topic}\n\nTarget Audience: People who want to use AI to save time, automate busywork, and grow their income or business — professionals, freelancers, side-hustlers, small business owners, students, and office workers looking to make their tasks and work more efficient, effective, and productive.\nPlatform: Instagram\nAngle: This is NOT a news channel. Every idea must answer "how does this help someone leverage AI to do more, faster, or for more profit?" Skip pure announcements with no practical takeaway.${angleNote}\n\nGenerate 3 content ideas for this topic. For each idea:\n- Content format: one of "reel_hook", "carousel", "story", "caption"\n- Hook (first 1-2 lines): Compelling, curiosity-driven, leads with the benefit/payoff\n- Full caption/script — length and style depend on format:\n  - "reel_hook" or "story": a SPOKEN VOICEOVER SCRIPT sized for a 30-SECOND video — 75-90 words total. Short spoken sentences, not essay prose. Structure: hook line (5-10 words) -> 2-3 punchy actionable points -> one-line CTA.\n  - "carousel": 5 short slide lines (15-25 words each), each one concrete and actionable, separated by "\\n".\n  - "caption": a concise 80-120 word Instagram caption with exactly one clear actionable takeaway.\n- Tone: one of "Educational", "Breaking", "Opinion", "Hype"\n\nReturn ONLY valid JSON (no markdown fences), an array shaped exactly like:\n[{ "format": "reel_hook", "hook": "...", "caption": "...", "tone": "Educational" }]`;
+  return `Topic:\n${topic}\n\nTarget Audience: People who want to use AI to save time, automate busywork, and grow their income or business — professionals, freelancers, side-hustlers, small business owners, students, and office workers looking to make their tasks and work more efficient, effective, and productive.\nPlatform: Instagram\nAngle: This is NOT a news channel. Every idea must answer "how does this help someone leverage AI to do more, faster, or for more profit?" Skip pure announcements with no practical takeaway.${angleNote}\n\nGenerate 3 content ideas for this topic. For each idea, return these fields:\n\n- "format": one of "reel_hook", "carousel", "story", "caption"\n\n- "hook": the opening line/first thing seen or heard (1-2 lines) — curiosity-driven, leads with the payoff\n\n- "script": the literal thing the user reads aloud or shows on screen while filming. Rules by format:\n  - "reel_hook" or "story": a COMPLETE, word-for-word spoken voiceover script sized for a 30-second video, 75-90 words total, written as natural spoken sentences (contractions, short clauses, no bullet points or markdown — it has to sound like a person talking, not an essay). Structure it as exactly three labeled lines:\n    HOOK (0-3s): <scroll-stopping opening line, restates the hook>\n    BODY (4-25s): <2-4 short, punchy, concrete sentences delivering the actual steps/value — the substance of the video>\n    CTA (26-30s): <one line telling the viewer to follow, save, or comment>\n  - "carousel": exactly 5 lines separated by "\\n", one per slide, 15-25 words each: slide 1 is the cover/hook, slides 2-4 are each one concrete actionable point, slide 5 is a save/share/follow CTA\n  - "caption": leave this as an empty string "" — there's no separate on-screen script for a caption-only post, the caption itself is the content\n\n- "caption": the actual text that goes in the Instagram post's caption box — NOT the script, even for reel_hook/story/carousel. This is what drives discovery and reach, so:\n  - Open with a 1-line hook restating the value in plain language\n  - 2-3 sentences naturally weaving in specific, searchable keywords related to AI, automation, and productivity/profit (real sentences, not a hashtag dump) so Instagram's algorithm and search can match it to people who'd want it\n  - End with exactly ONE explicit call-to-action that drives the engagement signals Instagram's algorithm weights most — saves, shares, or comments (e.g. "Save this for later", "Share with someone who needs this", "Comment 'GUIDE' and I'll send it over") — pick whichever fits the content best\n  - 80-120 words total, no hashtags (those are generated separately)\n\n- "tone": one of "Educational", "Breaking", "Opinion", "Hype"\n\nReturn ONLY valid JSON (no markdown fences), an array shaped exactly like:\n[{ "format": "reel_hook", "hook": "...", "script": "HOOK (0-3s): ...\\nBODY (4-25s): ...\\nCTA (26-30s): ...", "caption": "...", "tone": "Educational" }]`;
 }
 
 function isValidIdea(x: unknown): x is GeneratedIdea {
@@ -33,6 +41,7 @@ function isValidIdea(x: unknown): x is GeneratedIdea {
   return (
     typeof i.format === 'string' &&
     typeof i.hook === 'string' &&
+    typeof i.script === 'string' &&
     typeof i.caption === 'string' &&
     typeof i.tone === 'string'
   );
@@ -95,10 +104,10 @@ export async function generateIdeasWithGemini(researchItems: ResearchSummary[]):
     return [];
   }
   try {
-    // 3 ideas x (~90-word script + hook + JSON overhead) fits well under
-    // 1200 tokens — output is far shorter now than the old 200-300 word
-    // captions, so the budget should shrink with it rather than waste quota.
-    const text = await callGemini(buildPrompt(researchItems), 1200);
+    // 3 ideas x (~90-word script + ~100-word caption + hook + JSON overhead)
+    // runs close to 1000 tokens on its own now that script and caption are
+    // separate fields, so the budget needs real headroom above that.
+    const text = await callGemini(buildPrompt(researchItems), 2200);
     return parseIdeasJson(text);
   } catch (err) {
     logger.error({ err }, 'Gemini ideation failed');
@@ -112,7 +121,7 @@ export async function generateAlternativeIdeasWithGemini(researchItems: Research
     return [];
   }
   try {
-    const text = await callGemini(buildPrompt(researchItems, { altAngles: true }), 1200, 0.95);
+    const text = await callGemini(buildPrompt(researchItems, { altAngles: true }), 2200, 0.95);
     return parseIdeasJson(text);
   } catch (err) {
     logger.error({ err }, 'Gemini alternative-angle ideation failed');
@@ -140,7 +149,7 @@ export async function generateCaptionVariations(topic: string, tone: IdeaTone): 
     return [];
   }
   try {
-    const prompt = `Topic: ${topic}\nTone: ${tone}\nPlatform: Instagram\nAudience: professionals, freelancers, side-hustlers, small business owners, students, and office workers who want to use AI to save time, automate busywork, and grow their income, business, or productivity — not a news audience.\nAngle: every caption must land on a concrete, actionable way to leverage AI for productivity or profit — not just reporting what happened.\n\nWrite 3 distinct caption variations (80-120 words each) for this topic in the given tone. Return ONLY valid JSON (no markdown fences): an array of exactly 3 strings.`;
+    const prompt = `Topic: ${topic}\nTone: ${tone}\nPlatform: Instagram\nAudience: professionals, freelancers, side-hustlers, small business owners, students, and office workers who want to use AI to save time, automate busywork, and grow their income, business, or productivity — not a news audience.\nAngle: every caption must land on a concrete, actionable way to leverage AI for productivity or profit — not just reporting what happened.\n\nWrite 3 distinct Instagram caption variations (80-120 words each) for this topic in the given tone. Each one needs to actually drive reach, not just describe the topic:\n- Open with a 1-line hook in plain language\n- 2-3 sentences naturally weaving in specific, searchable keywords related to AI, automation, and productivity/profit (real sentences, not a hashtag dump) so Instagram's algorithm and search can match it to people who'd want it\n- End with exactly ONE explicit call-to-action that drives saves, shares, or comments (e.g. "Save this for later", "Share with someone who needs this", "Comment 'GUIDE' and I'll send it over") — whichever fits the content best\n- No hashtags (those are generated separately)\n\nReturn ONLY valid JSON (no markdown fences): an array of exactly 3 strings.`;
     const text = await callGemini(prompt, 800);
     const match = text.match(/\[[\s\S]*\]/);
     const parsed = JSON.parse(match ? match[0] : text);
@@ -174,6 +183,7 @@ export async function persistIdeas(
           format: idea.format,
           conceptVariation: index + 1,
           aiGeneratedCaption: idea.caption,
+          aiScript: idea.script,
           aiHook: idea.hook,
           tone: idea.tone,
           generatedBy,
@@ -194,16 +204,18 @@ export async function saveDraft(
   ideaId: string,
   scheduledDate: Date,
   scheduledTime: string,
-  overrides: { caption?: string; hashtags?: string[]; title?: string } = {}
+  overrides: { caption?: string; script?: string; hashtags?: string[]; title?: string } = {}
 ): Promise<ContentDraft> {
   const idea = await prisma.contentIdea.findUniqueOrThrow({ where: { id: ideaId } });
   const caption = overrides.caption ?? idea.aiGeneratedCaption;
+  const script = overrides.script ?? idea.aiScript;
   const hashtags = overrides.hashtags ?? (await generateHashtags(idea.aiHook));
   return prisma.contentDraft.create({
     data: {
       ideaId: idea.id,
       title: overrides.title ?? idea.aiHook.slice(0, 80),
       caption,
+      script: script || null,
       format: IDEA_FORMAT_TO_DRAFT_FORMAT[idea.format] ?? 'caption',
       hashtags: JSON.stringify(hashtags),
       scheduledDate,

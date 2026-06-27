@@ -8,10 +8,22 @@ vi.mock('../services/ideationEngine', async (importOriginal) => {
   return {
     ...actual,
     generateIdeasWithGemini: vi.fn(async () => [
-      { format: 'reel_hook', hook: 'Test hook A', caption: 'Test caption A', tone: 'Educational' },
+      {
+        format: 'reel_hook',
+        hook: 'Test hook A',
+        script: 'HOOK (0-3s): Test.\nBODY (4-25s): Test.\nCTA (26-30s): Test.',
+        caption: 'Test caption A',
+        tone: 'Educational',
+      },
     ]),
     generateAlternativeIdeasWithGemini: vi.fn(async () => [
-      { format: 'story', hook: 'Test hook B', caption: 'Test caption B', tone: 'Hype' },
+      {
+        format: 'story',
+        hook: 'Test hook B',
+        script: 'HOOK (0-3s): Test.\nBODY (4-25s): Test.\nCTA (26-30s): Test.',
+        caption: 'Test caption B',
+        tone: 'Hype',
+      },
     ]),
   };
 });

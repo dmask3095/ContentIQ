@@ -66,12 +66,14 @@ const createSchema = z.union([
     scheduled_date: z.coerce.date(),
     scheduled_time: z.string().regex(/^\d{2}:\d{2}$/),
     caption: z.string().optional(),
+    script: z.string().optional(),
     hashtags: z.array(z.string()).optional(),
     title: z.string().optional(),
   }),
   z.object({
     format: z.enum(['reel', 'carousel', 'story', 'caption']),
     caption: z.string(),
+    script: z.string().optional(),
     scheduled_date: z.coerce.date(),
     scheduled_time: z.string().regex(/^\d{2}:\d{2}$/),
     title: z.string().optional(),
@@ -91,6 +93,7 @@ draftsRouter.post('/', async (req, res) => {
   if ('idea_id' in body) {
     draft = await saveDraft(body.idea_id, body.scheduled_date, body.scheduled_time, {
       caption: body.caption,
+      script: body.script,
       hashtags: body.hashtags,
       title: body.title,
     });
@@ -100,6 +103,7 @@ draftsRouter.post('/', async (req, res) => {
       data: {
         title: body.title ?? body.caption.slice(0, 80),
         caption: body.caption,
+        script: body.script || null,
         format: body.format,
         hashtags: JSON.stringify(hashtags),
         scheduledDate: body.scheduled_date,
@@ -113,6 +117,7 @@ draftsRouter.post('/', async (req, res) => {
 
 const updateSchema = z.object({
   caption: z.string().optional(),
+  script: z.string().optional(),
   hashtags: z.array(z.string()).optional(),
   scheduled_date: z.coerce.date().optional(),
   scheduled_time: z
@@ -128,7 +133,7 @@ draftsRouter.put('/:id', async (req, res) => {
     res.status(400).json({ error: 'Invalid request body', details: parsed.error.flatten() });
     return;
   }
-  const { caption, hashtags, scheduled_date, scheduled_time, status } = parsed.data;
+  const { caption, script, hashtags, scheduled_date, scheduled_time, status } = parsed.data;
 
   const existing = await prisma.contentDraft.findUnique({ where: { id: req.params.id } });
   if (!existing) {
@@ -140,6 +145,7 @@ draftsRouter.put('/:id', async (req, res) => {
     where: { id: req.params.id },
     data: {
       ...(caption !== undefined ? { caption } : {}),
+      ...(script !== undefined ? { script } : {}),
       ...(hashtags !== undefined ? { hashtags: JSON.stringify(hashtags) } : {}),
       ...(scheduled_date !== undefined ? { scheduledDate: scheduled_date } : {}),
       ...(scheduled_time !== undefined ? { scheduledTime: scheduled_time } : {}),

@@ -15,6 +15,7 @@ export function DraftEditor({ draft, onClose }: DraftEditorProps) {
   const { update } = useUpdateDraft();
   const { showToast } = useToast();
   const [caption, setCaption] = useState(draft.caption);
+  const [script, setScript] = useState(draft.script ?? '');
   const [hashtags, setHashtags] = useState<string[]>(draft.hashtags);
   const [scheduledDate, setScheduledDate] = useState(formatDateInput(draft.scheduledDate));
   const [scheduledTime, setScheduledTime] = useState(draft.scheduledTime);
@@ -26,6 +27,7 @@ export function DraftEditor({ draft, onClose }: DraftEditorProps) {
     try {
       await update(draft.id, {
         caption,
+        script,
         hashtags,
         scheduled_date: scheduledDate,
         scheduled_time: scheduledTime,
@@ -43,8 +45,22 @@ export function DraftEditor({ draft, onClose }: DraftEditorProps) {
   return (
     <Modal title="Edit Draft" onClose={onClose} widthClassName="max-w-xl">
       <div className="flex flex-col gap-3">
+        {script && (
+          <div>
+            <label className="block text-xs font-medium text-slate-500">
+              🎤 Script — read this out loud while filming
+            </label>
+            <textarea
+              value={script}
+              onChange={(e) => setScript(e.target.value)}
+              rows={6}
+              className="mt-1 w-full rounded border border-slate-300 p-2 text-sm"
+            />
+          </div>
+        )}
+
         <div>
-          <label className="block text-xs font-medium text-slate-500">Caption</label>
+          <label className="block text-xs font-medium text-slate-500">📝 Instagram caption — post this</label>
           <textarea
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
