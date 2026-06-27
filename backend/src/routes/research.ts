@@ -25,13 +25,14 @@ researchRouter.get('/', async (req, res) => {
   }
   const { category, source, is_read, is_archived, skip, limit } = parsed.data;
 
-  // relevanceThreshold defaults to 0 (no hard floor) — a strict 7+ floor
-  // was tried and starved the feed down to 2-5 items for days at a time, so
-  // everything is shown sorted best-score-first instead and the score badge
-  // is left for the user to triage. Configurable per-user via Settings if
-  // they want a stricter cutoff back.
+  // relevanceThreshold defaults to 1 (no real floor, just excludes literal
+  // score-0 "not about AI at all" noise) — a strict 7+ floor was tried and
+  // starved the feed down to 2-5 items for days at a time, so everything
+  // else is shown sorted best-score-first and the score badge is left for
+  // the user to triage. Configurable per-user via Settings for a stricter
+  // cutoff.
   const settings = await prisma.userSettings.findFirst();
-  const relevanceThreshold = settings?.relevanceThreshold ?? 0;
+  const relevanceThreshold = settings?.relevanceThreshold ?? 1;
 
   const where = {
     relevanceScore: { gte: relevanceThreshold },
@@ -87,7 +88,7 @@ researchRouter.patch('/:id', async (req, res) => {
 
 researchRouter.post('/refresh', async (_req, res) => {
   const settings = await prisma.userSettings.findFirst();
-  const threshold = settings?.relevanceThreshold ?? 0;
+  const threshold = settings?.relevanceThreshold ?? 1;
 
   const { found, added, items } = await runResearchSweep(threshold);
 
