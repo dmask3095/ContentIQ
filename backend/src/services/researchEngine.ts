@@ -4,7 +4,7 @@ import { GOOGLE_API_KEY, GOOGLE_SEARCH_ENGINE_ID, httpClient } from '../utils/ap
 import { logger } from '../utils/logger';
 import { prisma } from '../utils/prisma';
 
-export type ResearchSource = 'hn' | 'reddit' | 'google' | 'techcrunch' | 'blog' | 'rss';
+export type ResearchSource = 'hn' | 'reddit' | 'google' | 'youtube' | 'techcrunch' | 'blog' | 'rss';
 export type ResearchCategory = 'AI News' | 'AI Tools' | 'Trends' | 'Tips' | 'Other';
 
 export interface RawResearchItem {
@@ -38,6 +38,9 @@ const RSS_FEEDS: { url: string; source: ResearchSource }[] = [
   { url: 'https://feeds.arstechnica.com/arstechnica/index', source: 'rss' },
   { url: 'https://www.technologyreview.com/feed/', source: 'rss' },
   { url: 'https://www.wired.com/feed/rss', source: 'rss' },
+  { url: 'https://www.producthunt.com/feed', source: 'rss' },
+  { url: 'https://lobste.rs/rss', source: 'rss' },
+  { url: 'https://dev.to/feed/tag/ai', source: 'rss' },
 ];
 
 // Web scraping is the documented fallback tier — selectors here are
@@ -104,6 +107,55 @@ async function googleSearch(): Promise<RawResearchItem[]> {
   }
 }
 
+// YouTube Data API v3 — the one mainstream social platform with a real free
+// tier for automated search (10k quota units/day, 100 per search call).
+// Twitter/X, LinkedIn, TikTok, and Instagram have no equivalent free API for
+// content discovery; scraping them is fragile and against ToS, so they're
+// deliberately not included here. Requires the SAME Google API key to also
+// have "YouTube Data API v3" enabled in Google Cloud Console (a separate
+// toggle from Custom Search) — returns [] gracefully until that's done.
+async function youtubeSearch(): Promise<RawResearchItem[]> {
+  if (!GOOGLE_API_KEY) {
+    logger.warn('GOOGLE_API_KEY not set, skipping YouTube search');
+    return [];
+  }
+  const queries = ['AI tools', 'AI automation', 'how to use AI'];
+  try {
+    const responses = await Promise.all(
+      queries.map((q) =>
+        httpClient.get('https://www.googleapis.com/youtube/v3/search', {
+          params: {
+            key: GOOGLE_API_KEY,
+            part: 'snippet',
+            type: 'video',
+            order: 'relevance',
+            maxResults: 10,
+            q,
+          },
+        })
+      )
+    );
+    const items: RawResearchItem[] = [];
+    for (const res of responses) {
+      for (const entry of res.data.items ?? []) {
+        const videoId = entry.id?.videoId;
+        if (!videoId) continue;
+        items.push({
+          title: entry.snippet?.title ?? '(untitled)',
+          snippet: (entry.snippet?.description || '').slice(0, 500),
+          fullUrl: `https://www.youtube.com/watch?v=${videoId}`,
+          source: 'youtube',
+          publishedAt: entry.snippet?.publishedAt ? new Date(entry.snippet.publishedAt) : new Date(),
+        });
+      }
+    }
+    return items;
+  } catch (err) {
+    logger.warn({ err }, 'YouTube search failed');
+    return [];
+  }
+}
+
 async function scrapeBlog(blog: { url: string; selector: string }): Promise<RawResearchItem[]> {
   try {
     const { data: html } = await httpClient.get(blog.url);
@@ -136,9 +188,17 @@ async function scrapeBlogs(): Promise<RawResearchItem[]> {
 }
 
 export async function crawlMultipleSources(): Promise<RawResearchItem[]> {
-  const [google, rss, blogs] = await Promise.all([googleSearch(), fetchRss(), scrapeBlogs()]);
-  logger.info({ google: google.length, rss: rss.length, blogs: blogs.length }, 'crawl complete');
-  return [...google, ...rss, ...blogs];
+  const [google, youtube, rss, blogs] = await Promise.all([
+    googleSearch(),
+    youtubeSearch(),
+    fetchRss(),
+    scrapeBlogs(),
+  ]);
+  logger.info(
+    { google: google.length, youtube: youtube.length, rss: rss.length, blogs: blogs.length },
+    'crawl complete'
+  );
+  return [...google, ...youtube, ...rss, ...blogs];
 }
 
 // Plain substring matching was tried first and had to be abandoned: 'ai'
@@ -258,6 +318,7 @@ const SOURCE_AUTHORITY_BONUS: Record<ResearchSource, number> = {
   hn: 1.0,
   techcrunch: 1.0,
   google: 0.8,
+  youtube: 0.7,
   blog: 0.8,
   rss: 0.6,
   reddit: 0.6,
