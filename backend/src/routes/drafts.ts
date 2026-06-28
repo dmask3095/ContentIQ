@@ -1,6 +1,7 @@
 import type { ContentDraft, PublishedPost } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
+import { parseCarouselSlides, renderCarouselZip, renderSlidePng } from '../services/carouselRenderer';
 import { generateHashtags, saveDraft } from '../services/ideationEngine';
 import { prisma } from '../utils/prisma';
 
@@ -154,6 +155,48 @@ draftsRouter.put('/:id', async (req, res) => {
   });
 
   res.json({ draft: serializeDraft(draft) });
+});
+
+async function getCarouselSlides(draftId: string): Promise<string[] | { error: string; status: number }> {
+  const draft = await prisma.contentDraft.findUnique({ where: { id: draftId } });
+  if (!draft) return { error: 'Draft not found', status: 404 };
+  if (draft.format !== 'carousel' || !draft.script) {
+    return { error: 'Draft has no carousel script to render', status: 400 };
+  }
+  const slides = parseCarouselSlides(draft.script);
+  if (slides.length === 0) return { error: 'Draft has no carousel script to render', status: 400 };
+  return slides;
+}
+
+// No Content-Disposition here on purpose -- this needs to work as a plain
+// <img src> for in-app preview, not just as a forced download. The frontend
+// triggers actual "save to disk" downloads itself via a blob fetch instead.
+draftsRouter.get('/:id/carousel/:index', async (req, res) => {
+  const slides = await getCarouselSlides(req.params.id);
+  if ('error' in slides) {
+    res.status(slides.status).json({ error: slides.error });
+    return;
+  }
+  const index = Number(req.params.index);
+  if (!Number.isInteger(index) || index < 0 || index >= slides.length) {
+    res.status(400).json({ error: `Invalid slide index, must be 0-${slides.length - 1}` });
+    return;
+  }
+  const png = await renderSlidePng(slides[index], index, slides.length);
+  res.setHeader('Content-Type', 'image/png');
+  res.send(png);
+});
+
+draftsRouter.get('/:id/carousel.zip', async (req, res) => {
+  const slides = await getCarouselSlides(req.params.id);
+  if ('error' in slides) {
+    res.status(slides.status).json({ error: slides.error });
+    return;
+  }
+  const zip = await renderCarouselZip(slides);
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="carousel-slides.zip"');
+  res.send(zip);
 });
 
 draftsRouter.delete('/:id', async (req, res) => {
