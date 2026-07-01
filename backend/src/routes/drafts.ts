@@ -1,8 +1,10 @@
 import type { ContentDraft, PublishedPost } from '@prisma/client';
+import axios from 'axios';
 import { Router } from 'express';
 import { z } from 'zod';
 import { parseCarouselSlides, renderCarouselZip, renderSlidePng } from '../services/carouselRenderer';
 import { generateHashtags, saveDraft } from '../services/ideationEngine';
+import { logger } from '../utils/logger';
 import { prisma } from '../utils/prisma';
 
 export const draftsRouter = Router();
@@ -208,4 +210,145 @@ draftsRouter.delete('/:id', async (req, res) => {
 
   await prisma.contentDraft.delete({ where: { id: req.params.id } });
   res.json({ success: true });
+});
+
+// ─── INSTAGRAM PUBLISH ───────────────────────────────────────────────────────
+// Publishes a carousel draft as an Instagram carousel post (or a single-image
+// post for non-carousel formats) via the Meta Graph API.
+//
+// Required env vars:
+//   INSTAGRAM_ACCESS_TOKEN       — long-lived User Access Token with
+//                                   instagram_content_publish + pages_read_engagement
+//   INSTAGRAM_BUSINESS_ACCOUNT_ID — numeric IG Business Account ID
+//   BACKEND_URL                  — public HTTPS base URL of this server
+//                                   (e.g. https://contentiq-zdhg.onrender.com)
+//                                   Instagram must be able to fetch images from it.
+const IG_API = 'https://graph.facebook.com/v19.0';
+
+async function igPost(path: string, params: Record<string, string>): Promise<{ id: string }> {
+  const res = await axios.post<{ id: string }>(`${IG_API}${path}`, null, { params });
+  return res.data;
+}
+
+draftsRouter.post('/:id/publish/instagram', async (req, res) => {
+  const { INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_BUSINESS_ACCOUNT_ID, BACKEND_URL } = process.env;
+
+  if (!INSTAGRAM_ACCESS_TOKEN || !INSTAGRAM_BUSINESS_ACCOUNT_ID) {
+    res.status(503).json({
+      error: 'Instagram not configured',
+      detail:
+        'Add INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_BUSINESS_ACCOUNT_ID to the backend .env file. ' +
+        'You need a Meta Developer app with instagram_content_publish permission and a Business/Creator account.',
+    });
+    return;
+  }
+
+  if (!BACKEND_URL || BACKEND_URL.startsWith('http://localhost')) {
+    res.status(503).json({
+      error: 'Instagram publishing requires a public HTTPS backend URL',
+      detail: 'Set BACKEND_URL=https://contentiq-zdhg.onrender.com in your backend .env. Instagram cannot reach localhost.',
+    });
+    return;
+  }
+
+  const draft = await prisma.contentDraft.findUnique({ where: { id: req.params.id } });
+  if (!draft) {
+    res.status(404).json({ error: 'Draft not found' });
+    return;
+  }
+  if (draft.status === 'published') {
+    res.status(400).json({ error: 'Draft is already published' });
+    return;
+  }
+
+  const igAccountId = INSTAGRAM_BUSINESS_ACCOUNT_ID;
+  const token = INSTAGRAM_ACCESS_TOKEN;
+  const hashtags = (JSON.parse(draft.hashtags || '[]') as string[]).join(' ');
+  const captionText = `${draft.caption}\n\n${hashtags}`;
+
+  try {
+    let creationId: string;
+
+    if (draft.format === 'carousel' && draft.script) {
+      // ── Carousel post ──────────────────────────────────────────────────────
+      const slides = parseCarouselSlides(draft.script);
+      if (slides.length === 0) {
+        res.status(400).json({ error: 'Carousel draft has no slides' });
+        return;
+      }
+
+      // Step 1: create a child media container for each slide image
+      const childIds = await Promise.all(
+        slides.map(async (_, i) => {
+          const imageUrl = `${BACKEND_URL}/api/drafts/${draft.id}/carousel/${i}`;
+          const child = await igPost(`/${igAccountId}/media`, {
+            image_url: imageUrl,
+            is_carousel_item: 'true',
+            access_token: token,
+          });
+          return child.id;
+        })
+      );
+
+      // Step 2: create the carousel container
+      const carousel = await igPost(`/${igAccountId}/media`, {
+        media_type: 'CAROUSEL',
+        children: childIds.join(','),
+        caption: captionText,
+        access_token: token,
+      });
+      creationId = carousel.id;
+    } else {
+      // ── Single-image post (reel/story/caption treated as static image post) ─
+      // We use the first carousel slide as the image if the script has content,
+      // otherwise show an error — Instagram cannot post without an image.
+      if (!draft.script) {
+        res.status(400).json({
+          error: 'No image available',
+          detail: 'Only carousel drafts with slides can be posted. Reel/story video publishing is not yet supported.',
+        });
+        return;
+      }
+      const slides = parseCarouselSlides(draft.script);
+      const imageUrl = `${BACKEND_URL}/api/drafts/${draft.id}/carousel/0`;
+      const container = await igPost(`/${igAccountId}/media`, {
+        image_url: imageUrl,
+        caption: captionText,
+        access_token: token,
+      });
+      creationId = container.id;
+      void slides; // only first slide used for single-image post
+    }
+
+    // Step 3: publish the container
+    const published = await igPost(`/${igAccountId}/media_publish`, {
+      creation_id: creationId,
+      access_token: token,
+    });
+
+    // Mark draft as published and record the Instagram post ID
+    const [updatedDraft] = await prisma.$transaction([
+      prisma.contentDraft.update({
+        where: { id: draft.id },
+        data: { status: 'published', publishedAt: new Date() },
+      }),
+      prisma.publishedPost.upsert({
+        where: { draftId: draft.id },
+        update: { instagramPostId: published.id, publishedAt: new Date(), lastSynced: new Date() },
+        create: {
+          draftId: draft.id,
+          instagramPostId: published.id,
+          format: draft.format,
+        },
+      }),
+    ]);
+
+    logger.info({ draftId: draft.id, instagramPostId: published.id }, 'Published to Instagram');
+    res.json({ success: true, instagramPostId: published.id, draft: serializeDraft(updatedDraft) });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    const igError = (err as { response?: { data?: unknown } }).response?.data;
+    logger.error({ err, draftId: draft.id }, 'Instagram publish failed');
+    res.status(502).json({ error: 'Instagram API error', detail: message, igError });
+  }
 });

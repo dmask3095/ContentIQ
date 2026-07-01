@@ -13,6 +13,8 @@ const listQuerySchema = z.object({
   source: z.string().optional(),
   is_read: z.enum(['true', 'false']).optional(),
   is_archived: z.enum(['true', 'false']).optional(),
+  // hot=true returns only items published in the last 48 hours, sorted newest first
+  hot: z.enum(['true', 'false']).optional(),
   skip: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
@@ -23,16 +25,12 @@ researchRouter.get('/', async (req, res) => {
     res.status(400).json({ error: 'Invalid query params', details: parsed.error.flatten() });
     return;
   }
-  const { category, source, is_read, is_archived, skip, limit } = parsed.data;
+  const { category, source, is_read, is_archived, hot, skip, limit } = parsed.data;
 
-  // relevanceThreshold defaults to 1 (no real floor, just excludes literal
-  // score-0 "not about AI at all" noise) — a strict 7+ floor was tried and
-  // starved the feed down to 2-5 items for days at a time, so everything
-  // else is shown sorted best-score-first and the score badge is left for
-  // the user to triage. Configurable per-user via Settings for a stricter
-  // cutoff.
   const settings = await prisma.userSettings.findFirst();
   const relevanceThreshold = settings?.relevanceThreshold ?? 1;
+
+  const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
   const where = {
     relevanceScore: { gte: relevanceThreshold },
@@ -40,12 +38,18 @@ researchRouter.get('/', async (req, res) => {
     ...(source ? { source } : {}),
     ...(is_read !== undefined ? { isRead: is_read === 'true' } : {}),
     ...(is_archived !== undefined ? { isArchived: is_archived === 'true' } : {}),
+    // Hot mode: only items that appeared in the last 48 hours
+    ...(hot === 'true' ? { publishedAt: { gte: cutoff48h } } : {}),
   };
 
   const [items, total] = await Promise.all([
     prisma.researchItem.findMany({
       where,
-      orderBy: [{ relevanceScore: 'desc' }, { discoveredAt: 'desc' }],
+      // Hot topics: newest first; normal feed: highest-score first
+      orderBy:
+        hot === 'true'
+          ? [{ publishedAt: 'desc' as const }, { relevanceScore: 'desc' as const }]
+          : [{ relevanceScore: 'desc' as const }, { discoveredAt: 'desc' as const }],
       skip,
       take: limit,
     }),

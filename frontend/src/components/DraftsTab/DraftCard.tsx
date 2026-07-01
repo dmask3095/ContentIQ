@@ -41,6 +41,7 @@ export function DraftCard({ draft, onEdit, onDelete }: DraftCardProps) {
   const [showPreview, setShowPreview] = useState(false);
   const [slideIndex, setSlideIndex] = useState(0);
   const [downloading, setDownloading] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   const isCarousel = draft.format === 'carousel' && !!draft.script;
   const slideCount = isCarousel ? countSlides(draft.script) : 0;
@@ -53,6 +54,22 @@ export function DraftCard({ draft, onEdit, onDelete }: DraftCardProps) {
       showToast('Failed to download carousel images', 'error');
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handlePublishInstagram = async () => {
+    setPublishing(true);
+    try {
+      await api.post(`/api/drafts/${draft.id}/publish/instagram`);
+      showToast('Posted to Instagram!', 'success');
+    } catch (err) {
+      const detail =
+        (err as { response?: { data?: { detail?: string; error?: string } } }).response?.data?.detail ??
+        (err as { response?: { data?: { error?: string } } }).response?.data?.error ??
+        'Instagram publish failed';
+      showToast(detail, 'error');
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -94,6 +111,20 @@ export function DraftCard({ draft, onEdit, onDelete }: DraftCardProps) {
           >
             {downloading ? 'Zipping…' : 'Download images'}
           </button>
+        )}
+        {draft.status !== 'published' && (
+          <button
+            onClick={handlePublishInstagram}
+            disabled={publishing}
+            className="rounded bg-gradient-to-r from-violet-500 to-pink-500 px-2.5 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {publishing ? 'Posting…' : 'Post to Instagram'}
+          </button>
+        )}
+        {draft.status === 'published' && (
+          <span className="rounded bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
+            Published
+          </span>
         )}
         <button
           onClick={() => onDelete(draft.id)}
@@ -150,13 +181,24 @@ export function DraftCard({ draft, onEdit, onDelete }: DraftCardProps) {
             <p className="mt-2 text-sm text-blue-600">{draft.hashtags.join(' ')}</p>
 
             {isCarousel && (
-              <button
-                onClick={handleDownloadZip}
-                disabled={downloading}
-                className="mt-3 w-full rounded bg-slate-900 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-              >
-                {downloading ? 'Zipping…' : 'Download all slides (ZIP)'}
-              </button>
+              <div className="mt-3 flex flex-col gap-2">
+                <button
+                  onClick={handleDownloadZip}
+                  disabled={downloading}
+                  className="w-full rounded bg-slate-900 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  {downloading ? 'Zipping…' : 'Download all slides (ZIP)'}
+                </button>
+                {draft.status !== 'published' && (
+                  <button
+                    onClick={handlePublishInstagram}
+                    disabled={publishing}
+                    className="w-full rounded bg-gradient-to-r from-violet-500 to-pink-500 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+                  >
+                    {publishing ? 'Posting to Instagram…' : 'Post to Instagram'}
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </Modal>

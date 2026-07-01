@@ -3,10 +3,10 @@ import { ErrorBoundary } from '../components/Common/ErrorBoundary';
 import { Header } from '../components/Common/Header';
 import { Sidebar } from '../components/Common/Sidebar';
 import { CalendarTab } from '../components/CalendarTab/CalendarTab';
-import { CaptionsTab } from '../components/CaptionsTab/CaptionsTab';
 import { DraftsTab } from '../components/DraftsTab/DraftsTab';
 import { FormatsTab } from '../components/FormatTabs/FormatsTab';
 import { HashtagsTab } from '../components/HashtagsTab/HashtagsTab';
+import { HotTopicsTab } from '../components/HotTopicsTab/HotTopicsTab';
 import { IdeationTab } from '../components/IdeationTab/IdeationTab';
 import { ResearchTab } from '../components/ResearchTab/ResearchTab';
 import { SettingsTab } from '../components/SettingsTab/SettingsTab';
@@ -14,10 +14,10 @@ import { useAppStore, type TabId } from '../store/useAppStore';
 
 const TAB_COMPONENTS: Record<TabId, ComponentType> = {
   research: ResearchTab,
+  hotTopics: HotTopicsTab,
   ideation: IdeationTab,
   drafts: DraftsTab,
   calendar: CalendarTab,
-  captions: CaptionsTab,
   hashtags: HashtagsTab,
   formats: FormatsTab,
   settings: SettingsTab,

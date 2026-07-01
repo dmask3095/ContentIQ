@@ -3,10 +3,10 @@ import type { ContentDraft, ContentIdea, ResearchItem, UserSettings } from '../t
 
 export type TabId =
   | 'research'
+  | 'hotTopics'
   | 'ideation'
   | 'drafts'
   | 'calendar'
-  | 'captions'
   | 'hashtags'
   | 'formats'
   | 'settings';

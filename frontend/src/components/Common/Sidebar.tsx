@@ -1,11 +1,11 @@
 import { useAppStore, type TabId } from '../../store/useAppStore';
 
-const TABS: { id: TabId; label: string; icon: string }[] = [
+const TABS: { id: TabId; label: string; icon: string; badge?: string }[] = [
   { id: 'research', label: 'Research', icon: '🔍' },
+  { id: 'hotTopics', label: 'Hot Topics', icon: '🔥', badge: 'NEW' },
   { id: 'ideation', label: 'Ideation', icon: '💡' },
-  { id: 'drafts', label: 'Drafts', icon: '📝' },
+  { id: 'drafts', label: 'Content Library', icon: '📁' },
   { id: 'calendar', label: 'Calendar', icon: '📅' },
-  { id: 'captions', label: 'Captions', icon: '✏️' },
   { id: 'hashtags', label: 'Trending Hashtags', icon: '#️⃣' },
   { id: 'formats', label: 'Reels / Posts / Stories', icon: '🎬' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
@@ -26,7 +26,12 @@ export function Sidebar() {
           }`}
         >
           <span aria-hidden>{tab.icon}</span>
-          {tab.label}
+          <span className="flex-1">{tab.label}</span>
+          {tab.badge && (
+            <span className="rounded bg-orange-500 px-1.5 py-0.5 text-[10px] font-bold text-white leading-none">
+              {tab.badge}
+            </span>
+          )}
         </button>
       ))}
     </nav>

@@ -132,16 +132,16 @@ export async function generateAlternativeIdeasWithGemini(researchItems: Research
 const EVERGREEN_HASHTAGS = ['#AI', '#MachineLearning', '#TechTrends', '#AINews', '#FutureOfWork'];
 const FALLBACK_TRENDING = ['#AIAgents', '#LLMs', '#GenerativeAI', '#OpenAI', '#Anthropic'];
 
-function deriveNicheHashtags(topic: string): string[] {
-  const words = topic
-    .replace(/[^a-zA-Z0-9\s]/g, '')
-    .split(/\s+/)
-    .filter((w) => w.length > 3)
-    .slice(0, 5)
-    .map((w) => `#${w[0].toUpperCase()}${w.slice(1)}`);
-  while (words.length < 5) words.push('#PromptEngineering');
-  return Array.from(new Set(words)).slice(0, 5);
-}
+// A curated pool of always-relevant niche hashtags for the AI tools /
+// automation / creator-economy space. Used to supplement trending tags so
+// every post gets 15 solid, real hashtags without Gemini involvement.
+const NICHE_HASHTAG_POOL = [
+  '#AITools', '#AIProductivity', '#ArtificialIntelligence',
+  '#AutomateYourBusiness', '#WorkSmarter', '#AIForCreators',
+  '#ContentCreation', '#CreatorEconomy', '#InstagramReels',
+  '#SideHustle', '#PassiveIncome', '#AIAutomation',
+  '#PromptEngineering', '#ChatGPT', '#TechForCreators',
+];
 
 export async function generateCaptionVariations(topic: string, tone: IdeaTone): Promise<string[]> {
   if (!process.env.GEMINI_API_KEY) {
@@ -160,14 +160,15 @@ export async function generateCaptionVariations(topic: string, tone: IdeaTone): 
   }
 }
 
-export async function generateHashtags(topic: string): Promise<string[]> {
+export async function generateHashtags(_topic: string): Promise<string[]> {
   const trending = await prisma.hashtagTrending.findMany({
     orderBy: { searchVolume: 'desc' },
     take: 5,
   });
   const trendingTags = Array.from(new Set([...trending.map((t) => t.hashtag), ...FALLBACK_TRENDING])).slice(0, 5);
-  const niche = deriveNicheHashtags(topic);
-  return Array.from(new Set([...trendingTags, ...EVERGREEN_HASHTAGS, ...niche])).slice(0, 15);
+  // Combine trending + evergreen + niche pool; topic-word-splitting was removed
+  // because it produced junk hashtags from verb-heavy hook sentences.
+  return Array.from(new Set([...trendingTags, ...EVERGREEN_HASHTAGS, ...NICHE_HASHTAG_POOL])).slice(0, 15);
 }
 
 export async function persistIdeas(
