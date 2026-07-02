@@ -28,6 +28,7 @@ export function DraftsTab() {
     <div className="flex flex-col gap-4">
       <div className="flex gap-3 rounded-lg border border-slate-200 bg-white p-3">
         <select
+          aria-label="Filter by status"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
           className="rounded border border-slate-300 px-2 py-1 text-sm"
@@ -38,6 +39,7 @@ export function DraftsTab() {
           <option value="published">Published</option>
         </select>
         <select
+          aria-label="Filter by format"
           value={format}
           onChange={(e) => setFormat(e.target.value)}
           className="rounded border border-slate-300 px-2 py-1 text-sm"

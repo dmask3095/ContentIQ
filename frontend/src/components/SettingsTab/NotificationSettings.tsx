@@ -37,6 +37,7 @@ export function NotificationSettings({
           Email digest
         </label>
         <select
+          aria-label="Email digest frequency"
           value={emailDigestFrequency}
           onChange={(e) => onChange({ emailDigestFrequency: e.target.value as DigestFrequency })}
           className="rounded border border-slate-300 px-2 py-1 text-sm"
@@ -54,6 +55,8 @@ export function NotificationSettings({
 
       <div className="flex flex-col gap-2">
         <input
+          id="slack-webhook-url"
+          name="slackWebhookUrl"
           value={slackWebhookUrl}
           onChange={(e) => onChange({ slackWebhookUrl: e.target.value })}
           placeholder="https://hooks.slack.com/services/T.../B.../..."
@@ -61,6 +64,8 @@ export function NotificationSettings({
           className="rounded border border-slate-300 px-2 py-1 text-sm disabled:bg-slate-50"
         />
         <input
+          id="slack-channel"
+          name="slackChannel"
           value={slackChannel}
           onChange={(e) => onChange({ slackChannel: e.target.value })}
           placeholder="#content-iq-digest"

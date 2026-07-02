@@ -42,6 +42,7 @@ export function HashtagsTab() {
           className="flex-1 rounded border border-slate-300 px-3 py-1.5 text-sm"
         />
         <select
+          aria-label="Filter by category"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
           className="rounded border border-slate-300 px-2 py-1.5 text-sm"

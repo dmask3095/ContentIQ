@@ -25,6 +25,7 @@ export function FilterBar({
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-3">
       <select
+        aria-label="Filter by category"
         value={category}
         onChange={(e) => onCategoryChange(e.target.value)}
         className="rounded border border-slate-300 px-2 py-1 text-sm"
@@ -38,6 +39,7 @@ export function FilterBar({
       </select>
 
       <select
+        aria-label="Filter by source"
         value={source}
         onChange={(e) => onSourceChange(e.target.value)}
         className="rounded border border-slate-300 px-2 py-1 text-sm"

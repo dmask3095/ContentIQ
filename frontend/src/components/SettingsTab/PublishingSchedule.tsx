@@ -35,6 +35,7 @@ export function PublishingSchedule({ timezone, contentMixGoal, onChange }: Publi
       <div className="flex items-center gap-2 text-sm text-slate-600">
         <label>Timezone</label>
         <select
+          aria-label="Timezone"
           value={timezone}
           onChange={(e) => onChange({ timezone: e.target.value })}
           className="rounded border border-slate-300 px-2 py-1"

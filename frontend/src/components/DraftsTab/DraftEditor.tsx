@@ -99,6 +99,7 @@ export function DraftEditor({ draft, onClose }: DraftEditorProps) {
           <div>
             <label className="block text-xs font-medium text-slate-500">Status</label>
             <select
+              aria-label="Draft status"
               value={status}
               onChange={(e) => setStatus(e.target.value as DraftStatus)}
               className="mt-1 rounded border border-slate-300 px-2 py-1 text-sm"
