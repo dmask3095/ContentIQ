@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import archiver from 'archiver';
@@ -11,6 +12,31 @@ const FONTS_DIR = join(dirname(require.resolve('@fontsource/inter/package.json')
 const regularFont = readFileSync(join(FONTS_DIR, 'inter-latin-400-normal.woff'));
 const boldFont = readFileSync(join(FONTS_DIR, 'inter-latin-800-normal.woff'));
 
+// Consistent seed strings for picsum.photos — same seed always returns the
+// same photo. These seeds were chosen because picsum maps them to dark,
+// cinematic images that sit well under a semi-transparent overlay with white
+// text on top. Cycling through them per slide position guarantees each slide
+// has a different but always on-brand background.
+const SLIDE_SEEDS = ['dark', 'night', 'tech', 'purple', 'minimal', 'space', 'future', 'blur', 'glow', 'abstract'];
+
+// Fetch a background photo as a base64 data-URI so satori can embed it
+// without making its own HTTP request during rendering.
+// picsum.photos is a free CDN — no API key needed, no usage limits.
+async function fetchBackgroundDataUri(slideIndex: number): Promise<string | null> {
+  const seed = SLIDE_SEEDS[slideIndex % SLIDE_SEEDS.length];
+  // 540×675 = half resolution; sufficient for a background that's covered by
+  // a dark overlay (1/4 the data of full 1080×1350, much faster to fetch)
+  const url = `https://picsum.photos/seed/${seed}/540/675`;
+  try {
+    const res = await axios.get<ArrayBuffer>(url, { responseType: 'arraybuffer', timeout: 8000 });
+    const ct = (res.headers['content-type'] as string) || 'image/jpeg';
+    const b64 = Buffer.from(res.data).toString('base64');
+    return `data:${ct};base64,${b64}`;
+  } catch {
+    return null;
+  }
+}
+
 export function parseCarouselSlides(script: string): string[] {
   return script
     .split('\n')
@@ -18,120 +44,142 @@ export function parseCarouselSlides(script: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-function fontSizeFor(text: string, dark = false): number {
-  const base = dark ? 6 : 0;
-  if (text.length <= 55) return 68 + base;
-  if (text.length <= 90) return 56 + base;
-  if (text.length <= 140) return 46 + base;
-  if (text.length <= 200) return 38 + base;
+function fontSizeFor(text: string): number {
+  if (text.length <= 55) return 68;
+  if (text.length <= 90) return 56;
+  if (text.length <= 140) return 46;
+  if (text.length <= 200) return 38;
   return 32;
 }
 
-// ─── COVER SLIDE ────────────────────────────────────────────────────────────
-// Dark navy background, glowing accent circles, left-aligned big white text.
-function buildCoverSlide(text: string, index: number, total: number) {
+// ─── SHARED: full-bleed photo layer (position: absolute, behind everything) ─
+function photoLayer(dataUri: string) {
+  return {
+    type: 'img',
+    props: {
+      src: dataUri,
+      width: WIDTH,
+      height: HEIGHT,
+      style: { position: 'absolute' as const, top: 0, left: 0, width: '100%', height: '100%' },
+    },
+  };
+}
+
+// ─── COVER SLIDE ─────────────────────────────────────────────────────────────
+// Full-bleed photo + purple-to-transparent gradient overlay + large white title.
+function buildCoverSlide(text: string, index: number, total: number, bg: string | null) {
   return {
     type: 'div',
     props: {
       style: {
         width: '100%', height: '100%', display: 'flex', flexDirection: 'column' as const,
-        backgroundColor: '#0f172a', padding: '80px', fontFamily: 'Inter',
-        position: 'relative', overflow: 'hidden',
+        backgroundColor: '#0f172a', // shown if photo fails
+        fontFamily: 'Inter', position: 'relative', overflow: 'hidden',
       },
       children: [
-        // Glow blob — top-right corner (painted first so it sits behind content)
+        // Background photo
+        ...(bg ? [photoLayer(bg)] : []),
+        // Gradient overlay: strong at bottom, lighter at top
         {
           type: 'div',
           props: {
             style: {
-              position: 'absolute', right: '-130px', top: '-130px',
-              width: '580px', height: '580px', borderRadius: '290px',
-              background: 'radial-gradient(circle at center, rgba(99,102,241,0.38) 0%, rgba(99,102,241,0) 68%)',
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              background: 'linear-gradient(to bottom, rgba(10,7,30,0.55) 0%, rgba(10,7,30,0.88) 100%)',
             },
             children: '',
           },
         },
-        // Glow blob — bottom-left corner
+        // Purple glow top-right
         {
           type: 'div',
           props: {
             style: {
-              position: 'absolute', left: '-90px', bottom: '-90px',
-              width: '420px', height: '420px', borderRadius: '210px',
-              background: 'radial-gradient(circle at center, rgba(219,39,119,0.32) 0%, rgba(219,39,119,0) 68%)',
+              position: 'absolute', right: '-100px', top: '-100px',
+              width: '500px', height: '500px', borderRadius: '250px',
+              background: 'radial-gradient(circle, rgba(124,58,237,0.45) 0%, transparent 70%)',
             },
             children: '',
           },
         },
-        // Top row: slide counter + "AI TOOLS" pill
-        {
-          type: 'div',
-          props: {
-            style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-            children: [
-              {
-                type: 'div',
-                props: {
-                  style: { fontSize: 24, color: 'rgba(255,255,255,0.42)', fontWeight: 400 },
-                  children: `${index + 1} / ${total}`,
-                },
-              },
-              {
-                type: 'div',
-                props: {
-                  style: {
-                    fontSize: 18, color: '#a5b4fc', fontWeight: 700,
-                    backgroundColor: 'rgba(99,102,241,0.2)',
-                    padding: '8px 20px', borderRadius: '20px', letterSpacing: '1.5px',
-                  },
-                  children: 'AI TOOLS',
-                },
-              },
-            ],
-          },
-        },
-        // Main text — fills remaining vertical space, vertically centred
+        // Content layer — column layout, sits on top of all absolute layers
         {
           type: 'div',
           props: {
             style: {
-              flex: 1, display: 'flex', alignItems: 'center',
-              paddingTop: '40px', paddingBottom: '40px',
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              display: 'flex', flexDirection: 'column' as const, padding: '80px',
             },
-            children: {
-              type: 'div',
-              props: {
-                style: {
-                  fontSize: fontSizeFor(text), color: '#ffffff',
-                  fontWeight: 800, lineHeight: 1.2,
-                },
-                children: text,
-              },
-            },
-          },
-        },
-        // Bottom: gradient accent bar + swipe hint
-        {
-          type: 'div',
-          props: {
-            style: { display: 'flex', flexDirection: 'column' as const, gap: '20px' },
             children: [
+              // Top row: counter + "AI TOOLS" pill
               {
                 type: 'div',
                 props: {
-                  style: {
-                    height: '4px', width: '96px',
-                    background: 'linear-gradient(90deg, #818cf8 0%, #ec4899 100%)',
-                    borderRadius: '2px',
-                  },
-                  children: '',
+                  style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+                  children: [
+                    {
+                      type: 'div',
+                      props: {
+                        style: { fontSize: 24, color: 'rgba(255,255,255,0.5)', fontWeight: 400 },
+                        children: `${index + 1} / ${total}`,
+                      },
+                    },
+                    {
+                      type: 'div',
+                      props: {
+                        style: {
+                          fontSize: 18, fontWeight: 700, color: '#c4b5fd',
+                          backgroundColor: 'rgba(124,58,237,0.3)',
+                          padding: '8px 22px', borderRadius: '24px', letterSpacing: '1.5px',
+                        },
+                        children: 'AI TOOLS',
+                      },
+                    },
+                  ],
                 },
               },
+              // Main title — fills the centre
               {
                 type: 'div',
                 props: {
-                  style: { fontSize: 22, color: 'rgba(255,255,255,0.42)', fontWeight: 400 },
-                  children: 'swipe for more >',
+                  style: { flex: 1, display: 'flex', alignItems: 'flex-end', paddingBottom: '36px' },
+                  children: {
+                    type: 'div',
+                    props: {
+                      style: {
+                        fontSize: fontSizeFor(text), color: '#ffffff',
+                        fontWeight: 800, lineHeight: 1.18,
+                      },
+                      children: text,
+                    },
+                  },
+                },
+              },
+              // Bottom: gradient line + swipe hint
+              {
+                type: 'div',
+                props: {
+                  style: { display: 'flex', flexDirection: 'column' as const, gap: '18px' },
+                  children: [
+                    {
+                      type: 'div',
+                      props: {
+                        style: {
+                          height: '4px', width: '100px',
+                          background: 'linear-gradient(90deg, #818cf8 0%, #ec4899 100%)',
+                          borderRadius: '2px',
+                        },
+                        children: '',
+                      },
+                    },
+                    {
+                      type: 'div',
+                      props: {
+                        style: { fontSize: 22, color: 'rgba(255,255,255,0.5)', fontWeight: 400 },
+                        children: 'swipe for more >',
+                      },
+                    },
+                  ],
                 },
               },
             ],
@@ -143,109 +191,111 @@ function buildCoverSlide(text: string, index: number, total: number) {
 }
 
 // ─── CONTENT SLIDE ───────────────────────────────────────────────────────────
-// Clean off-white background. Left rainbow accent bar. Bold numbered badge.
-// Faint oversized number watermark for visual depth.
-function buildContentSlide(text: string, index: number, total: number) {
-  // The badge shows the content point number (1, 2, 3…) — index 0 is cover,
-  // so the first content slide at index 1 shows badge "1".
-  const pointNumber = String(index);
+// Photo background + heavy dark overlay + frosted white card holding the text.
+function buildContentSlide(text: string, index: number, total: number, bg: string | null) {
+  const pointNum = String(index);
 
   return {
     type: 'div',
     props: {
       style: {
-        width: '100%', height: '100%', display: 'flex', flexDirection: 'row' as const,
-        backgroundColor: '#f8fafc', fontFamily: 'Inter',
-        position: 'relative', overflow: 'hidden',
+        width: '100%', height: '100%', display: 'flex',
+        backgroundColor: '#1e1b4b',
+        fontFamily: 'Inter', position: 'relative', overflow: 'hidden',
       },
       children: [
-        // Faint oversized watermark number — absolutely positioned behind content
+        ...(bg ? [photoLayer(bg)] : []),
+        // Dark overlay (heavier than cover so text card pops)
         {
           type: 'div',
           props: {
             style: {
-              position: 'absolute', right: '-10px', bottom: '-80px',
-              fontSize: '420px', fontWeight: 800,
-              color: 'rgba(99,102,241,0.055)', lineHeight: 1,
-            },
-            children: pointNumber,
-          },
-        },
-        // Left rainbow accent bar (flex-row child, full-height self-stretching)
-        {
-          type: 'div',
-          props: {
-            style: {
-              width: '12px', flexShrink: 0,
-              background: 'linear-gradient(180deg, #6366f1 0%, #a855f7 50%, #ec4899 100%)',
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              background: 'linear-gradient(160deg, rgba(15,7,40,0.78) 0%, rgba(15,7,40,0.92) 100%)',
             },
             children: '',
           },
         },
-        // Content area
+        // Content column (absolute, full-size)
         {
           type: 'div',
           props: {
             style: {
-              flex: 1, display: 'flex', flexDirection: 'column' as const,
-              padding: '80px 80px 70px 88px',
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              display: 'flex', flexDirection: 'column' as const, padding: '72px 80px',
             },
             children: [
               // Top row: numbered badge + slide counter
               {
                 type: 'div',
                 props: {
-                  style: {
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    marginBottom: '56px',
-                  },
+                  style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '56px' },
                   children: [
                     {
                       type: 'div',
                       props: {
                         style: {
-                          width: '68px', height: '68px', borderRadius: '34px',
+                          width: '72px', height: '72px', borderRadius: '36px',
                           background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '30px', fontWeight: 800, color: '#ffffff',
+                          fontSize: '32px', fontWeight: 800, color: '#ffffff',
                         },
-                        children: pointNumber,
+                        children: pointNum,
                       },
                     },
                     {
                       type: 'div',
                       props: {
-                        style: { fontSize: 22, color: '#94a3b8', fontWeight: 400 },
+                        style: { fontSize: 22, color: 'rgba(255,255,255,0.45)', fontWeight: 400 },
                         children: `${index + 1} / ${total}`,
                       },
                     },
                   ],
                 },
               },
-              // Main content text
-              {
-                type: 'div',
-                props: {
-                  style: { flex: 1, display: 'flex', alignItems: 'center' },
-                  children: {
-                    type: 'div',
-                    props: {
-                      style: {
-                        fontSize: fontSizeFor(text, true),
-                        color: '#1e293b', fontWeight: 700, lineHeight: 1.35,
-                      },
-                      children: text,
-                    },
-                  },
-                },
-              },
-              // Bottom-right swipe hint
+              // Frosted white card for the main text
               {
                 type: 'div',
                 props: {
                   style: {
-                    textAlign: 'right' as const, fontSize: 22,
-                    color: '#94a3b8', fontWeight: 400, marginTop: '32px',
+                    flex: 1, backgroundColor: 'rgba(255,255,255,0.96)',
+                    borderRadius: '28px', padding: '52px',
+                    display: 'flex', flexDirection: 'column' as const,
+                    justifyContent: 'center',
+                  },
+                  children: [
+                    // Thin coloured top accent on the card
+                    {
+                      type: 'div',
+                      props: {
+                        style: {
+                          height: '5px', width: '72px', borderRadius: '3px',
+                          background: 'linear-gradient(90deg, #6366f1 0%, #ec4899 100%)',
+                          marginBottom: '36px',
+                        },
+                        children: '',
+                      },
+                    },
+                    {
+                      type: 'div',
+                      props: {
+                        style: {
+                          fontSize: fontSizeFor(text),
+                          color: '#1e293b', fontWeight: 700, lineHeight: 1.35,
+                        },
+                        children: text,
+                      },
+                    },
+                  ],
+                },
+              },
+              // Bottom hint
+              {
+                type: 'div',
+                props: {
+                  style: {
+                    marginTop: '28px', textAlign: 'right' as const,
+                    fontSize: 22, color: 'rgba(255,255,255,0.42)', fontWeight: 400,
                   },
                   children: 'swipe >',
                 },
@@ -259,84 +309,107 @@ function buildContentSlide(text: string, index: number, total: number) {
 }
 
 // ─── CTA SLIDE ───────────────────────────────────────────────────────────────
-// Vibrant indigo→violet→pink gradient. Centred CTA text with a decorative
-// circle accent above it.
-function buildCtaSlide(text: string, index: number, total: number) {
+// Photo + strong gradient overlay (almost opaque) so it feels like pure
+// purple/pink, then centred white CTA text.
+function buildCtaSlide(text: string, index: number, total: number, bg: string | null) {
   return {
     type: 'div',
     props: {
       style: {
-        width: '100%', height: '100%', display: 'flex', flexDirection: 'column' as const,
-        background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 45%, #db2777 100%)',
-        padding: '80px', fontFamily: 'Inter',
-        position: 'relative', overflow: 'hidden',
+        width: '100%', height: '100%', display: 'flex',
+        backgroundColor: '#4c1d95',
+        fontFamily: 'Inter', position: 'relative', overflow: 'hidden',
       },
       children: [
-        // Soft white radial glow (top-left, behind content)
+        ...(bg ? [photoLayer(bg)] : []),
+        // Very heavy gradient overlay — photo shows through just slightly for texture
         {
           type: 'div',
           props: {
             style: {
-              position: 'absolute', left: '-160px', top: '-160px',
-              width: '660px', height: '660px', borderRadius: '330px',
-              background: 'radial-gradient(circle at center, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 62%)',
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              background: 'linear-gradient(135deg, rgba(79,46,229,0.93) 0%, rgba(124,58,237,0.93) 45%, rgba(219,39,119,0.93) 100%)',
             },
             children: '',
           },
         },
-        // Slide counter
-        {
-          type: 'div',
-          props: {
-            style: { fontSize: 24, color: 'rgba(255,255,255,0.42)', fontWeight: 400 },
-            children: `${index + 1} / ${total}`,
-          },
-        },
-        // Centre: decorative circle + CTA text
+        // Radial glow in the centre
         {
           type: 'div',
           props: {
             style: {
-              flex: 1, display: 'flex', flexDirection: 'column' as const,
-              alignItems: 'center', justifyContent: 'center', gap: '36px',
+              position: 'absolute', top: '50%', left: '50%',
+              width: '800px', height: '800px', borderRadius: '400px',
+              marginTop: '-400px', marginLeft: '-400px',
+              background: 'radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 60%)',
+            },
+            children: '',
+          },
+        },
+        // Content column
+        {
+          type: 'div',
+          props: {
+            style: {
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              display: 'flex', flexDirection: 'column' as const, padding: '80px',
+              alignItems: 'center',
             },
             children: [
-              // White frosted circle
+              // Slide counter (top-left)
               {
                 type: 'div',
                 props: {
-                  style: {
-                    width: '116px', height: '116px', borderRadius: '58px',
-                    backgroundColor: 'rgba(255,255,255,0.2)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '54px', fontWeight: 800, color: '#ffffff',
-                  },
-                  children: '*',
+                  style: { fontSize: 24, color: 'rgba(255,255,255,0.45)', fontWeight: 400, alignSelf: 'flex-start' as const },
+                  children: `${index + 1} / ${total}`,
                 },
               },
+              // Centre: decorative circle + CTA text
               {
                 type: 'div',
                 props: {
                   style: {
-                    fontSize: fontSizeFor(text),
-                    color: '#ffffff', fontWeight: 800,
-                    textAlign: 'center' as const, lineHeight: 1.25,
+                    flex: 1, display: 'flex', flexDirection: 'column' as const,
+                    alignItems: 'center', justifyContent: 'center', gap: '40px',
                   },
-                  children: text,
+                  children: [
+                    {
+                      type: 'div',
+                      props: {
+                        style: {
+                          width: '120px', height: '120px', borderRadius: '60px',
+                          backgroundColor: 'rgba(255,255,255,0.22)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '56px', fontWeight: 800, color: '#ffffff',
+                        },
+                        children: '*',
+                      },
+                    },
+                    {
+                      type: 'div',
+                      props: {
+                        style: {
+                          fontSize: fontSizeFor(text), color: '#ffffff',
+                          fontWeight: 800, textAlign: 'center' as const, lineHeight: 1.22,
+                        },
+                        children: text,
+                      },
+                    },
+                  ],
+                },
+              },
+              // Save prompt
+              {
+                type: 'div',
+                props: {
+                  style: {
+                    fontSize: 24, color: 'rgba(255,255,255,0.5)',
+                    fontWeight: 400, textAlign: 'center' as const,
+                  },
+                  children: 'save this post',
                 },
               },
             ],
-          },
-        },
-        // Bottom save prompt
-        {
-          type: 'div',
-          props: {
-            style: {
-              textAlign: 'center' as const, fontSize: 22,
-              color: 'rgba(255,255,255,0.52)', fontWeight: 400,
-            },
-            children: 'save this post',
           },
         },
       ],
@@ -344,14 +417,15 @@ function buildCtaSlide(text: string, index: number, total: number) {
   };
 }
 
-function buildSlideTree(text: string, index: number, total: number) {
-  if (index === 0) return buildCoverSlide(text, index, total);
-  if (index === total - 1) return buildCtaSlide(text, index, total);
-  return buildContentSlide(text, index, total);
+function buildSlideTree(text: string, index: number, total: number, bg: string | null) {
+  if (index === 0) return buildCoverSlide(text, index, total, bg);
+  if (index === total - 1) return buildCtaSlide(text, index, total, bg);
+  return buildContentSlide(text, index, total, bg);
 }
 
 export async function renderSlidePng(text: string, index: number, total: number): Promise<Buffer> {
-  const svg = await satori(buildSlideTree(text, index, total) as Parameters<typeof satori>[0], {
+  const bg = await fetchBackgroundDataUri(index);
+  const svg = await satori(buildSlideTree(text, index, total, bg) as Parameters<typeof satori>[0], {
     width: WIDTH,
     height: HEIGHT,
     fonts: [
