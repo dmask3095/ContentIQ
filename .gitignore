@@ -34,3 +34,6 @@ npm-debug.log*
 coverage/
 .turbo
 *.tsbuildinfo
+
+# Worktrees
+.worktrees/
