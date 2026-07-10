@@ -1,4 +1,4 @@
-import type { ContentDraft, PublishedPost } from '@prisma/client';
+import type { ContentDraft } from '@prisma/client';
 import axios from 'axios';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -6,16 +6,9 @@ import { parseCarouselSlides, renderCarouselZip, renderSlidePng } from '../servi
 import { generateHashtags, saveDraft } from '../services/ideationEngine';
 import { logger } from '../utils/logger';
 import { prisma } from '../utils/prisma';
+import { serializeDraft } from '../utils/serializeDraft';
 
 export const draftsRouter = Router();
-
-function serializeDraft(draft: ContentDraft & { publishedPost?: PublishedPost | null }) {
-  return {
-    ...draft,
-    hashtags: JSON.parse(draft.hashtags || '[]'),
-    carouselSlides: draft.carouselSlides ? JSON.parse(draft.carouselSlides) : null,
-  };
-}
 
 const listQuerySchema = z.object({
   status: z.string().optional(),
