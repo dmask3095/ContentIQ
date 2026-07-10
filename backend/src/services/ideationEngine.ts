@@ -59,6 +59,36 @@ function parseIdeasJson(text: string): GeneratedIdea[] {
   }
 }
 
+function buildCarouselPrompt(topic: ResearchSummary): string {
+  return `Topic: ${topic.title}: ${topic.snippet}\n\nTarget Audience: People who want to use AI to save time, automate busywork, and grow their income or business — professionals, freelancers, side-hustlers, small business owners, students, and office workers looking to make their tasks and work more efficient, effective, and productive.\nPlatform: Instagram carousel post\nAngle: This is NOT a news channel. The carousel must answer "how does this help someone leverage AI to do more, faster, or for more profit?"\n\nGenerate exactly ONE highly effective 5-slide carousel for this specific topic. Return these fields:\n\n- "hook": the cover slide's opening line (1-2 lines) — curiosity-driven, leads with the payoff\n\n- "script": exactly 5 lines separated by "\\n", one per slide, 15-25 words each:\n  - slide 1 (cover): a scroll-stopping hook that frames the topic's stakes or promise — why should someone care right now\n  - slides 2-4: each one concrete, specific, actionable point (not a vague recap of the news) — the real substance\n  - slide 5: a save/share/follow CTA\n\n- "caption": the Instagram post caption (NOT the slide script) — 80-120 words, opens with a 1-line hook, weaves in searchable AI/automation/productivity keywords in 2-3 natural sentences, ends with exactly ONE explicit save/share/comment CTA, no hashtags\n\n- "tone": one of "Educational", "Breaking", "Opinion", "Hype"\n\nReturn ONLY valid JSON (no markdown fences), a single object shaped exactly like:\n{ "hook": "...", "script": "slide 1 text\\nslide 2 text\\nslide 3 text\\nslide 4 text\\nslide 5 text", "caption": "...", "tone": "Educational" }`;
+}
+
+function buildReelPrompt(topic: ResearchSummary): string {
+  return `Topic: ${topic.title}: ${topic.snippet}\n\nTarget Audience: People who want to use AI to save time, automate busywork, and grow their income or business — professionals, freelancers, side-hustlers, small business owners, students, and office workers looking to make their tasks and work more efficient, effective, and productive.\nPlatform: Instagram Reel, 30 seconds\nAngle: This is NOT a news channel. The reel must answer "how does this help someone leverage AI to do more, faster, or for more profit?"\n\nGenerate exactly ONE highly trendable, highly catchy, attention-grabbing 30-second reel script for this specific topic. This has to genuinely stop the scroll and hold attention for the full 30 seconds — not a plain summary of the news. Use a pattern-interrupt opening and a curiosity gap, punchy short sentences, natural spoken language (contractions, no bullet points or markdown). Return these fields:\n\n- "hook": the opening line/first thing seen or heard (1-2 lines)\n\n- "script": a COMPLETE, word-for-word spoken voiceover script, 75-90 words total, structured as exactly three labeled lines:\n  HOOK (0-3s): <scroll-stopping, pattern-interrupt opening line>\n  BODY (4-25s): <2-4 short, punchy, concrete sentences delivering the actual steps/value>\n  CTA (26-30s): <one line telling the viewer to follow, save, or comment>\n\n- "caption": the Instagram post caption (NOT the script) — 80-120 words, opens with a 1-line hook, weaves in searchable AI/automation/productivity keywords in 2-3 natural sentences, ends with exactly ONE explicit save/share/comment CTA, no hashtags\n\n- "tone": one of "Educational", "Breaking", "Opinion", "Hype"\n\nReturn ONLY valid JSON (no markdown fences), a single object shaped exactly like:\n{ "hook": "...", "script": "HOOK (0-3s): ...\\nBODY (4-25s): ...\\nCTA (26-30s): ...", "caption": "...", "tone": "Hype" }`;
+}
+
+function isValidSingleIdea(x: unknown): x is Omit<GeneratedIdea, 'format'> {
+  if (!x || typeof x !== 'object') return false;
+  const i = x as Record<string, unknown>;
+  return (
+    typeof i.hook === 'string' &&
+    typeof i.script === 'string' &&
+    typeof i.caption === 'string' &&
+    typeof i.tone === 'string'
+  );
+}
+
+export function parseSingleIdeaJson(text: string): Omit<GeneratedIdea, 'format'> | null {
+  try {
+    const match = text.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(match ? match[0] : text);
+    return isValidSingleIdea(parsed) ? parsed : null;
+  } catch (err) {
+    logger.warn({ err, text: text.slice(0, 200) }, 'failed to parse single-idea JSON');
+    return null;
+  }
+}
+
 const RETRYABLE_STATUS = new Set([429, 503]);
 
 function sleep(ms: number): Promise<void> {
@@ -126,6 +156,25 @@ export async function generateAlternativeIdeasWithGemini(researchItems: Research
   } catch (err) {
     logger.error({ err }, 'Gemini alternative-angle ideation failed');
     return [];
+  }
+}
+
+export async function generateSingleIdea(
+  topic: ResearchSummary,
+  format: 'carousel' | 'reel_hook'
+): Promise<GeneratedIdea | null> {
+  if (!process.env.GEMINI_API_KEY) {
+    logger.warn('GEMINI_API_KEY not set, skipping quick generation');
+    return null;
+  }
+  try {
+    const prompt = format === 'carousel' ? buildCarouselPrompt(topic) : buildReelPrompt(topic);
+    const text = await callGemini(prompt, 1000);
+    const parsed = parseSingleIdeaJson(text);
+    return parsed ? { ...parsed, format } : null;
+  } catch (err) {
+    logger.error({ err, format }, 'quick idea generation failed');
+    return null;
   }
 }
 
@@ -221,6 +270,21 @@ export async function saveDraft(
       hashtags: JSON.stringify(hashtags),
       scheduledDate,
       scheduledTime,
+    },
+  });
+}
+
+export async function saveQuickDraft(idea: GeneratedIdea, draftFormat: 'carousel' | 'reel'): Promise<ContentDraft> {
+  const hashtags = await generateHashtags(idea.hook);
+  return prisma.contentDraft.create({
+    data: {
+      title: idea.hook.slice(0, 80),
+      caption: idea.caption,
+      script: idea.script || null,
+      format: draftFormat,
+      hashtags: JSON.stringify(hashtags),
+      scheduledDate: new Date(),
+      scheduledTime: '09:00',
     },
   });
 }
