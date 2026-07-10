@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
+import { DraftPreviewModal } from '../Common/DraftPreviewModal';
 import { LoadingSpinner } from '../Common/LoadingSpinner';
 import { useToast } from '../Common/Toast';
-import type { ResearchItem } from '../../types';
+import { useQuickGenerate } from '../../hooks/useIdeation';
+import type { ContentDraft, ResearchItem } from '../../types';
 import { api } from '../../utils/api';
 import { timeAgo } from '../../utils/formatters';
+import { HotTopicActions } from './HotTopicActions';
 
 const SOURCE_LABELS: Record<string, string> = {
   hn: 'Hacker News',
@@ -38,7 +41,10 @@ export function HotTopicsTab() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [previewDraft, setPreviewDraft] = useState<ContentDraft | null>(null);
   const { showToast } = useToast();
+  const { generate, loading: generating } = useQuickGenerate();
 
   const fetchHot = useCallback(async () => {
     setLoading(true);
@@ -69,6 +75,21 @@ export function HotTopicsTab() {
       showToast('Refresh failed — check API keys in Settings', 'error');
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const handleGenerate = async (item: ResearchItem, format: 'carousel' | 'reel') => {
+    try {
+      const draft = await generate(item.id, format);
+      setOpenMenuId(null);
+      setPreviewDraft(draft);
+      showToast(`${format === 'carousel' ? 'Carousel' : 'Reel script'} generated and saved as a draft`, 'success');
+    } catch (err) {
+      const detail =
+        (err as { response?: { data?: { detail?: string; error?: string } } }).response?.data?.detail ??
+        (err as { response?: { data?: { error?: string } } }).response?.data?.error ??
+        'Generation failed';
+      showToast(detail, 'error');
     }
   };
 
@@ -123,44 +144,54 @@ export function HotTopicsTab() {
           {items.map((item) => {
             const age = hoursAgo(item.publishedAt);
             return (
-              <a
-                key={item.id}
-                href={item.fullUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
-              >
-                {/* Top row */}
-                <div className="flex items-center justify-between gap-2">
-                  <span
-                    className={`rounded px-2 py-0.5 text-xs font-medium ${CATEGORY_COLORS[item.category] ?? CATEGORY_COLORS.Other}`}
-                  >
-                    {item.category}
-                  </span>
-                  <HeatBadge hours={age} />
-                </div>
-
-                {/* Title */}
-                <p className="font-semibold leading-snug text-slate-900 line-clamp-3">{item.title}</p>
-
-                {/* Snippet */}
-                {item.snippet && (
-                  <p className="text-xs leading-relaxed text-slate-500 line-clamp-2">{item.snippet}</p>
-                )}
-
-                {/* Footer */}
-                <div className="mt-auto flex items-center justify-between pt-1 text-xs text-slate-400">
-                  <span>{SOURCE_LABELS[item.source] ?? item.source}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-indigo-600">{item.relevanceScore.toFixed(1)}</span>
-                    <span>{timeAgo(item.publishedAt)}</span>
+              <div key={item.id} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setOpenMenuId((id) => (id === item.id ? null : item.id))}
+                  className="flex w-full flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-md"
+                >
+                  {/* Top row */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${CATEGORY_COLORS[item.category] ?? CATEGORY_COLORS.Other}`}
+                    >
+                      {item.category}
+                    </span>
+                    <HeatBadge hours={age} />
                   </div>
-                </div>
-              </a>
+
+                  {/* Title */}
+                  <p className="font-semibold leading-snug text-slate-900 line-clamp-3">{item.title}</p>
+
+                  {/* Snippet */}
+                  {item.snippet && (
+                    <p className="text-xs leading-relaxed text-slate-500 line-clamp-2">{item.snippet}</p>
+                  )}
+
+                  {/* Footer */}
+                  <div className="mt-auto flex items-center justify-between pt-1 text-xs text-slate-400">
+                    <span>{SOURCE_LABELS[item.source] ?? item.source}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-indigo-600">{item.relevanceScore.toFixed(1)}</span>
+                      <span>{timeAgo(item.publishedAt)}</span>
+                    </div>
+                  </div>
+                </button>
+                {openMenuId === item.id && (
+                  <HotTopicActions
+                    item={item}
+                    loading={generating}
+                    onGenerate={(format) => handleGenerate(item, format)}
+                    onClose={() => setOpenMenuId(null)}
+                  />
+                )}
+              </div>
             );
           })}
         </div>
       )}
+
+      {previewDraft && <DraftPreviewModal draft={previewDraft} onClose={() => setPreviewDraft(null)} />}
     </div>
   );
 }
