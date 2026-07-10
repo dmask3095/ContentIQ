@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../app';
 import { prisma } from '../utils/prisma';
+import { generateSingleIdea } from '../services/ideationEngine';
 
 vi.mock('../services/ideationEngine', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/ideationEngine')>();
@@ -25,6 +26,16 @@ vi.mock('../services/ideationEngine', async (importOriginal) => {
         tone: 'Hype',
       },
     ]),
+    generateSingleIdea: vi.fn(async (_topic: { title: string; snippet: string }, format: 'carousel' | 'reel_hook') => ({
+      format,
+      hook: 'Quick hook',
+      script:
+        format === 'carousel'
+          ? 'Slide 1\nSlide 2\nSlide 3\nSlide 4\nSlide 5'
+          : 'HOOK (0-3s): Test.\nBODY (4-25s): Test.\nCTA (26-30s): Test.',
+      caption: 'Quick caption',
+      tone: 'Hype',
+    })),
   };
 });
 
@@ -77,5 +88,57 @@ describe('POST /api/ideation/generate', () => {
       where: { id: { in: res.body.ideas.map((i: { id: string }) => i.id) } },
     });
     expect(persisted).toHaveLength(2);
+  });
+});
+
+describe('POST /api/ideation/quick-generate', () => {
+  afterAll(async () => {
+    await prisma.contentDraft.deleteMany({ where: { title: 'Quick hook' } });
+  });
+
+  it('returns 400 for an invalid format', async () => {
+    const res = await request(app)
+      .post('/api/ideation/quick-generate')
+      .send({ research_item_id: researchItemId, format: 'video' });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when the research item does not exist', async () => {
+    const res = await request(app)
+      .post('/api/ideation/quick-generate')
+      .send({ research_item_id: 'nonexistent-id', format: 'carousel' });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 502 when generation fails', async () => {
+    vi.mocked(generateSingleIdea).mockResolvedValueOnce(null);
+    const res = await request(app)
+      .post('/api/ideation/quick-generate')
+      .send({ research_item_id: researchItemId, format: 'carousel' });
+    expect(res.status).toBe(502);
+  });
+
+  it('creates a carousel draft scheduled for today at 09:00', async () => {
+    const res = await request(app)
+      .post('/api/ideation/quick-generate')
+      .send({ research_item_id: researchItemId, format: 'carousel' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.draft.format).toBe('carousel');
+    expect(res.body.draft.title).toBe('Quick hook');
+    expect(res.body.draft.scheduledTime).toBe('09:00');
+    expect(new Date(res.body.draft.scheduledDate).toDateString()).toBe(new Date().toDateString());
+
+    const persisted = await prisma.contentDraft.findUnique({ where: { id: res.body.draft.id } });
+    expect(persisted).not.toBeNull();
+  });
+
+  it('creates a reel draft', async () => {
+    const res = await request(app)
+      .post('/api/ideation/quick-generate')
+      .send({ research_item_id: researchItemId, format: 'reel' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.draft.format).toBe('reel');
   });
 });

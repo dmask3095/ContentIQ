@@ -1,7 +1,14 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { generateAlternativeIdeasWithGemini, generateIdeasWithGemini, persistIdeas } from '../services/ideationEngine';
+import {
+  generateAlternativeIdeasWithGemini,
+  generateIdeasWithGemini,
+  generateSingleIdea,
+  persistIdeas,
+  saveQuickDraft,
+} from '../services/ideationEngine';
 import { prisma } from '../utils/prisma';
+import { serializeDraft } from '../utils/serializeDraft';
 
 export const ideationRouter = Router();
 
@@ -37,4 +44,39 @@ ideationRouter.post('/generate', async (req, res) => {
   ]);
 
   res.json({ ideas: [...standardSaved, ...altSaved] });
+});
+
+const quickGenerateSchema = z.object({
+  research_item_id: z.string(),
+  format: z.enum(['carousel', 'reel']),
+});
+
+ideationRouter.post('/quick-generate', async (req, res) => {
+  const parsed = quickGenerateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request body', details: parsed.error.flatten() });
+    return;
+  }
+  const { research_item_id, format } = parsed.data;
+
+  const item = await prisma.researchItem.findUnique({ where: { id: research_item_id } });
+  if (!item) {
+    res.status(404).json({ error: 'Research item not found' });
+    return;
+  }
+
+  const idea = await generateSingleIdea(
+    { title: item.title, snippet: item.snippet },
+    format === 'carousel' ? 'carousel' : 'reel_hook'
+  );
+  if (!idea) {
+    res.status(502).json({
+      error: 'Generation failed',
+      detail: 'Check Gemini API key in Settings, or try again (free tier can be busy)',
+    });
+    return;
+  }
+
+  const draft = await saveQuickDraft(idea, format);
+  res.status(201).json({ draft: serializeDraft(draft) });
 });
