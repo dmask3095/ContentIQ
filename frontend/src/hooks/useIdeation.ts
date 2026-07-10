@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import type { ContentIdea } from '../types';
+import { useAppStore } from '../store/useAppStore';
+import type { ContentDraft, ContentIdea } from '../types';
 import { api } from '../utils/api';
 
 export function useGenerateIdeas() {
@@ -24,4 +25,28 @@ export function useGenerateIdeas() {
   }, []);
 
   return { generate, loading, error };
+}
+
+export function useQuickGenerate() {
+  const addContentDraft = useAppStore((s) => s.addContentDraft);
+  const [loading, setLoading] = useState<'carousel' | 'reel' | null>(null);
+
+  const generate = useCallback(
+    async (researchItemId: string, format: 'carousel' | 'reel') => {
+      setLoading(format);
+      try {
+        const res = await api.post<{ draft: ContentDraft }>('/api/ideation/quick-generate', {
+          research_item_id: researchItemId,
+          format,
+        });
+        addContentDraft(res.data.draft);
+        return res.data.draft;
+      } finally {
+        setLoading(null);
+      }
+    },
+    [addContentDraft]
+  );
+
+  return { generate, loading };
 }
