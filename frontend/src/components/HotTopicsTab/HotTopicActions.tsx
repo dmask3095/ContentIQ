@@ -43,7 +43,7 @@ export function HotTopicActions({ item, loading, onGenerate, onClose }: HotTopic
         disabled={loading !== null}
         className="border-t border-slate-100 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
       >
-        {loading === 'reel' ? 'Generating…' : '🎬 Generate Reel'}
+        {loading === 'reel' ? 'Generating…' : '🎬 Generate Reel Script'}
       </button>
       <button
         onClick={handleOpenLink}
