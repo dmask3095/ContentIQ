@@ -333,8 +333,28 @@ function recencyBonus(publishedAt: Date): number {
   return 0.4;
 }
 
+// Common non-Latin scripts (CJK, Cyrillic, Arabic, Devanagari, Thai, Hebrew).
+// No language-detection library needed for a check this coarse — content
+// mostly written in one of these scripts isn't the English content this
+// app produces for, regardless of how many English keywords it happens to
+// contain (e.g. an "AI" or "automate" dropped into an otherwise-foreign title).
+const NON_LATIN_SCRIPT_REGEX =
+  /[぀-ヿ一-鿿가-힯Ѐ-ӿ؀-ۿऀ-ॿ฀-๿֐-׿]/g;
+
+// Short foreign phrases embedded in mostly-English writing (a quoted term,
+// a stylistic aside) shouldn't disqualify the item — only a text that's
+// dominated by a non-Latin script should. 20-letter floor avoids judging
+// on titles too short for the ratio to mean anything.
+function isLikelyNonEnglish(text: string): boolean {
+  const letters = text.replace(/[^\p{L}]/gu, '');
+  if (letters.length < 20) return false;
+  const nonLatinCount = (text.match(NON_LATIN_SCRIPT_REGEX) || []).length;
+  return nonLatinCount / letters.length > 0.15;
+}
+
 function scoreItem(item: RawResearchItem): number {
   const text = `${item.title} ${item.snippet}`;
+  if (isLikelyNonEnglish(text)) return 0; // English-only content for now
   const aiHits = countHits(text, CORE_AI_REGEXES);
   if (aiHits === 0) return 0; // not about AI at all — score it zero, full stop
 

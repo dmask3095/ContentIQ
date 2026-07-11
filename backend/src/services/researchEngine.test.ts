@@ -144,6 +144,32 @@ describe('deduplicateAndRank', () => {
     ]);
     expect(result.relevanceScore).toBeLessThan(7);
   });
+
+  it('returns 0 for content that is mostly non-English, even when English AI/action keywords are present', () => {
+    const [result] = deduplicateAndRank([
+      rawItem({
+        title: 'AI 自动化工具帮你节省时间和金钱 automate tools save time',
+        snippet:
+          '这是一篇关于人工智能自动化工作流程如何帮助自由职业者和小企业主提高生产力并节省宝贵时间的文章,里面有很多实用技巧和窍门可以立即使用',
+        source: 'techcrunch',
+        publishedAt: new Date(),
+      }),
+    ]);
+    expect(result.relevanceScore).toBe(0);
+  });
+
+  it('does not penalize mostly-English content containing a short foreign phrase', () => {
+    const [result] = deduplicateAndRank([
+      rawItem({
+        title: '5 AI Tools to Automate Your Workflow and Save Time',
+        snippet:
+          'A roundup of automation tools for freelancers and small business owners. As we say, 精打细算 is key.',
+        source: 'techcrunch',
+        publishedAt: new Date(),
+      }),
+    ]);
+    expect(result.relevanceScore).toBeGreaterThanOrEqual(7);
+  });
 });
 
 describe('categorizeItems', () => {
